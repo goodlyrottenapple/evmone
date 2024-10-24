@@ -93,6 +93,7 @@ inline const std::error_category& evmc_loader_category() noexcept
 std::variant<evmone::state::TransactionReceipt, std::error_code> run_vm(std::string& vm_config,
         evmc_revision rev,
         int64_t gas,
+        intx::uint256 value,
         const evmc::bytes& code,
         const evmc::bytes& input)
 {
@@ -122,6 +123,7 @@ std::variant<evmone::state::TransactionReceipt, std::error_code> run_vm(std::str
     state::Transaction tx;
     tx.data = input;
     tx.gas_limit = gas;
+    tx.value = value;
     tx.to = std::optional<address>{ some_address };
 
     return test::transition(state, block, tx, rev, vm, gas,
@@ -152,6 +154,7 @@ int main(int argc, const char** argv) noexcept
         std::vector<std::string> vm_config;
         std::string code_arg;
         int64_t gas = 1000000;
+        intx::uint256 value = 0;
         auto rev = EVMC_LATEST_STABLE_REVISION;
         std::string input_arg;
         auto create = false;
@@ -166,6 +169,7 @@ int main(int argc, const char** argv) noexcept
             ->check(CLI::Range(0, 1000000000));
         run_cmd.add_option("--rev", rev, "EVM revision")->capture_default_str();
         run_cmd.add_option("--input", input_arg, "Input bytes")->check(HexOrFile);
+        run_cmd.add_option("--value", value, "Transaction value")->capture_default_str();
         run_cmd.add_flag(
             "--create", create,
             "Create new contract out of the code and then execute this contract with the input");
@@ -186,11 +190,11 @@ int main(int argc, const char** argv) noexcept
                 std::vector<std::pair<std::string,evmone::state::TransactionReceipt>> successful_results;
 
                 for (auto& config : vm_config) {
-                    const auto result_or_error = run_vm(config, rev, gas, code, input);
+                    const auto result_or_error = run_vm(config, rev, gas, value, code, input);
                 
                     if (const auto result = std::get_if<evmone::state::TransactionReceipt>(&result_or_error))
                     {
-                        if (result->status == EVMC_SUCCESS) successful_results.emplace_back(config,*result);
+                        if (result->status == EVMC_SUCCESS) successful_results.emplace_back(config,std::move(*result));
                         else std::cerr << "error" << config << ": " << result->status;
                     }
                 }
@@ -215,8 +219,10 @@ int main(int argc, const char** argv) noexcept
 
                         for(auto& ma : successful_results[0].second.state_diff.modified_accounts){
                             auto got = modified_accounts_map.find(ma.addr);
-                            if ( got == modified_accounts_map.end() )
+                            if ( got == modified_accounts_map.end() ){
                                 equivalent_storage = false;
+                                break;
+                            }
                             else {
                                 std::set<std::pair<bytes32, bytes32>> modified_storage_set(
                                     ma.modified_storage.begin(),
@@ -228,7 +234,6 @@ int main(int argc, const char** argv) noexcept
                                 equivalent_storage = equivalent_storage
                                     && modified_storage_set.size() == modified_storage_set2.size()
                                     && std::equal(modified_storage_set.begin(), modified_storage_set.end(), modified_storage_set2.begin());
-                                
                             }
                         }
                     }
