@@ -157,7 +157,6 @@ int main(int argc, const char** argv) noexcept
         intx::uint256 value = 0;
         auto rev = EVMC_LATEST_STABLE_REVISION;
         std::string input_arg;
-        auto create = false;
 
         CLI::App app{"EVMC tool"};
         const auto& vm_option =
@@ -170,9 +169,6 @@ int main(int argc, const char** argv) noexcept
         run_cmd.add_option("--rev", rev, "EVM revision")->capture_default_str();
         run_cmd.add_option("--input", input_arg, "Input bytes")->check(HexOrFile);
         run_cmd.add_option("--value", value, "Transaction value")->capture_default_str();
-        run_cmd.add_flag(
-            "--create", create,
-            "Create new contract out of the code and then execute this contract with the input");
 
         try
         {
