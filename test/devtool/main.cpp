@@ -185,15 +185,24 @@ int main(int argc, const char** argv) noexcept
                 const auto input = load_from_hex(input_arg);
                 std::vector<std::pair<std::string,evmone::state::TransactionReceipt>> successful_results;
 
+                std::optional<evmc_status_code> failed_result;
+                size_t failed_counter = 0;
+
                 for (auto& config : vm_config) {
                     const auto result_or_error = run_vm(config, rev, gas, value, code, input);
                 
                     if (const auto result = std::get_if<evmone::state::TransactionReceipt>(&result_or_error))
                     {
                         if (result->status == EVMC_SUCCESS) successful_results.emplace_back(config,std::move(*result));
-                        else std::cerr << "error" << config << ": " << result->status;
+                        else {
+                            std::cerr << "error" << config << ": " << result->status;
+                            if (failed_result.has_value() && failed_result.value() != result->status) return 1;
+                            else failed_result = result->status;
+                            failed_counter++;
+                        }
                     }
                 }
+                if (failed_counter > 0 && vm_config.size() != failed_counter) return 1;
                 if (successful_results.size() > 0){
                     bool equivalent_gas = true;
                     for (auto& result : successful_results) {
@@ -240,6 +249,8 @@ int main(int argc, const char** argv) noexcept
                             std::clog << "\n  " << result.first << ":";
                             print_modified_accounts(result.second.state_diff.modified_accounts, "    ");
                         }
+
+                    if(!equivalent_gas || !equivalent_storage) return 1;
                 }
 
                 std::clog << "\n";
