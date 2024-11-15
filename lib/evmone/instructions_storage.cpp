@@ -95,8 +95,8 @@ constexpr auto sstore_costs = []() noexcept {
 
 Result sload(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
 {
-    auto& x = stack.top();
-    const auto key = intx::be::store<evmc::bytes32>(x);
+    auto& x = stack[0];
+    const auto key = intx::be::store<evmc::bytes32>(x.val);
 
     if (state.rev >= EVMC_BERLIN &&
         state.host.access_storage(state.msg->recipient, key) == EVMC_ACCESS_COLD)
@@ -109,7 +109,12 @@ Result sload(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    x = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
+    if (!std::holds_alternative<Concrete>(*stack[0].sval))
+        state.requirements.push_back(Equal{stack[0].sval, stack[0].val});
+
+    x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
+    state.sstore_touched_keys.insert(x.sval);
+    x.sval = std::make_shared<SymbolicStackItem>(Sload {x.sval, state.sstore});
 
     return {EVMC_SUCCESS, gas_left};
 }
@@ -122,8 +127,8 @@ Result sstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
     if (state.rev >= EVMC_ISTANBUL && gas_left <= 2300)
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    const auto key = intx::be::store<evmc::bytes32>(stack.pop());
-    const auto value = intx::be::store<evmc::bytes32>(stack.pop());
+    const auto key = intx::be::store<evmc::bytes32>(stack[0].val);
+    const auto value = intx::be::store<evmc::bytes32>(stack[1].val);
 
     const auto gas_cost_cold =
         (state.rev >= EVMC_BERLIN &&
@@ -137,6 +142,10 @@ Result sstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
     if ((gas_left -= gas_cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
     state.gas_refund += gas_refund;
+    if (!std::holds_alternative<Concrete>(*stack[0].sval))
+        state.requirements.push_back(Equal{stack[0].sval, stack[0].val});
+    state.sstore_touched_keys.insert(stack[0].sval);
+    state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SymbolicUpdate {stack[0].sval, stack[1].sval}, state.sstore});
     return {EVMC_SUCCESS, gas_left};
 }
 }  // namespace evmone::instr::core

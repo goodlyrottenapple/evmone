@@ -185,7 +185,7 @@ const Instruction* op_jump(const Instruction*, AdvancedExecutionState& state) no
 
 const Instruction* op_jumpi(const Instruction* instr, AdvancedExecutionState& state) noexcept
 {
-    if (state.stack[1] != 0)
+    if (state.stack[1].val != 0)
     {
         instr = op_jump(instr, state);  // target
         (void)state.stack.pop();        // condition

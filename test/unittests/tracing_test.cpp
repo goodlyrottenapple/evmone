@@ -7,6 +7,7 @@
 #include <evmc/mocked_host.hpp>
 #include <evmone/evmone.h>
 #include <evmone/instructions_traits.hpp>
+#include <evmone/symbolic.hpp>
 #include <evmone/tracing.hpp>
 #include <evmone/vm.hpp>
 #include <gmock/gmock.h>
@@ -57,7 +58,7 @@ protected:
 
         void on_execution_end(const evmc_result& /*result*/) noexcept override { m_code = {}; }
 
-        void on_instruction_start(uint32_t pc, const intx::uint256* /*stack_top*/,
+        void on_instruction_start(uint32_t pc, const evmone::StackItem* /*stack_top*/,
             int /*stack_height*/, int64_t /*gas*/,
             const evmone::ExecutionState& /*state*/) noexcept override
         {
@@ -83,7 +84,7 @@ protected:
 
         void on_execution_end(const evmc_result& /*result*/) noexcept override {}
 
-        void on_instruction_start(uint32_t /*pc*/, const intx::uint256* /*stack_top*/,
+        void on_instruction_start(uint32_t /*pc*/, const evmone::StackItem* /*stack_top*/,
             int /*stack_height*/, int64_t /*gas*/,
             const evmone::ExecutionState& /*state*/) noexcept override
         {}

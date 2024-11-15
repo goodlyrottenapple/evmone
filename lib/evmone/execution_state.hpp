@@ -3,11 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "symbolic.hpp"
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
+#include <iostream>
 
 namespace evmone
 {
@@ -28,17 +31,17 @@ using intx::uint256;
 /// Provides memory for EVM stack.
 class StackSpace
 {
-    static uint256* allocate() noexcept
+    static StackItem* allocate() noexcept
     {
-        static constexpr auto alignment = sizeof(uint256);
-        static constexpr auto size = limit * sizeof(uint256);
+        static constexpr auto alignment = std::bit_ceil(sizeof(StackItem));
+        static constexpr auto size = limit * sizeof(StackItem);
 #ifdef _MSC_VER
         // MSVC doesn't support aligned_alloc() but _aligned_malloc() can be used instead.
         const auto p = _aligned_malloc(size, alignment);
 #else
         const auto p = std::aligned_alloc(alignment, size);
 #endif
-        return static_cast<uint256*>(p);
+        return static_cast<StackItem*>(p);
     }
 
     struct Deleter
@@ -57,7 +60,7 @@ class StackSpace
 
     /// The storage allocated for maximum possible number of items.
     /// Items are aligned to 256 bits for better packing in cache lines.
-    std::unique_ptr<uint256, Deleter> m_stack_space;
+    std::unique_ptr<StackItem, Deleter> m_stack_space;
 
 public:
     /// The maximum number of EVM stack items.
@@ -66,7 +69,7 @@ public:
     StackSpace() noexcept : m_stack_space{allocate()} {}
 
     /// Returns the pointer to the "bottom", i.e. below the stack space.
-    [[nodiscard, clang::no_sanitize("bounds")]] uint256* bottom() noexcept
+    [[nodiscard, clang::no_sanitize("bounds")]] StackItem* bottom() noexcept
     {
         return m_stack_space.get() - 1;
     }
@@ -170,6 +173,13 @@ public:
     /// Container to be deployed returned from RETURNCONTRACT, used only inside EOFCREATE execution.
     std::optional<bytes> deploy_container;
 
+    /// Symbolic storage
+    std::vector<SymbolicRequirement> requirements;
+    std::unordered_set<std::shared_ptr<SymbolicStackItem>> sstore_touched_keys;
+    std::shared_ptr<SymbolicStorage> sstore = nullptr;
+    std::shared_ptr<SymbolicStorage> ststore = nullptr;
+    std::shared_ptr<SymbolicStorage> smemory = nullptr;
+
 private:
     evmc_tx_context m_tx = {};
 
@@ -215,6 +225,11 @@ public:
         deploy_container = {};
         m_tx = {};
         call_stack = {};
+        requirements = {};
+        sstore_touched_keys = {};
+        sstore = nullptr;
+        ststore = nullptr;
+        smemory = nullptr;
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }

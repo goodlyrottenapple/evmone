@@ -40,7 +40,7 @@ class HistogramTracer : public Tracer
         m_contexts.emplace(msg.depth, code.data());
     }
 
-    void on_instruction_start(uint32_t pc, const intx::uint256* /*stack_top*/, int /*stack_height*/,
+    void on_instruction_start(uint32_t pc, const StackItem* /*stack_top*/, int /*stack_height*/,
         int64_t /*gas*/, const ExecutionState& /*state*/) noexcept override
     {
         auto& ctx = m_contexts.top();
@@ -81,7 +81,7 @@ class InstructionTracer : public Tracer
     std::stack<Context> m_contexts;
     std::ostream& m_out;  ///< Output stream.
 
-    void output_stack(const intx::uint256* stack_top, int stack_height)
+    void output_stack(const StackItem* stack_top, int stack_height)
     {
         m_out << R"(,"stack":[)";
         const auto stack_end = stack_top + 1;
@@ -90,7 +90,7 @@ class InstructionTracer : public Tracer
         {
             if (it != stack_begin)
                 m_out << ',';
-            m_out << R"("0x)" << to_string(*it, 16) << '"';
+            m_out << R"("0x)" << to_string(it->val, 16) << '"';
         }
         m_out << ']';
     }
@@ -101,7 +101,7 @@ class InstructionTracer : public Tracer
         m_contexts.emplace(msg.depth, code.data(), msg.gas);
     }
 
-    void on_instruction_start(uint32_t pc, const intx::uint256* stack_top, int stack_height,
+    void on_instruction_start(uint32_t pc, const StackItem* stack_top, int stack_height,
         int64_t gas, const ExecutionState& state) noexcept override
     {
         const auto& ctx = m_contexts.top();

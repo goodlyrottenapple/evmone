@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "symbolic.hpp"
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
 #include <evmc/utils.h>
@@ -40,7 +41,7 @@ public:
     }
 
     void notify_instruction_start(  // NOLINT(misc-no-recursion)
-        uint32_t pc, intx::uint256* stack_top, int stack_height, int64_t gas,
+        uint32_t pc, StackItem* stack_top, int stack_height, int64_t gas,
         const ExecutionState& state) noexcept
     {
         on_instruction_start(pc, stack_top, stack_height, gas, state);
@@ -51,7 +52,7 @@ public:
 private:
     virtual void on_execution_start(
         evmc_revision rev, const evmc_message& msg, bytes_view code) noexcept = 0;
-    virtual void on_instruction_start(uint32_t pc, const intx::uint256* stack_top, int stack_height,
+    virtual void on_instruction_start(uint32_t pc, const StackItem* stack_top, int stack_height,
         int64_t gas, const ExecutionState& state) noexcept = 0;
     virtual void on_execution_end(const evmc_result& result) noexcept = 0;
 };

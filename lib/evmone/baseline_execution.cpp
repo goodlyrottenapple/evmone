@@ -7,8 +7,10 @@
 #include "eof.hpp"
 #include "execution_state.hpp"
 #include "instructions.hpp"
+#include "symbolic.cpp"
 #include "vm.hpp"
 #include <memory>
+#include <iostream>
 
 #ifdef NDEBUG
 #define release_inline gnu::always_inline, msvc::forceinline
@@ -43,7 +45,7 @@ namespace
 ///          or EVMC_SUCCESS if everything is fine.
 template <Opcode Op>
 inline evmc_status_code check_requirements(const CostTable& cost_table, int64_t& gas_left,
-    const uint256* stack_top, const uint256* stack_bottom) noexcept
+    const StackItem* stack_top, const StackItem* stack_bottom) noexcept
 {
     static_assert(
         !instr::has_const_gas_cost(Op) || instr::gas_costs[EVMC_FRONTIER][Op] != instr::undefined,
@@ -88,7 +90,7 @@ inline evmc_status_code check_requirements(const CostTable& cost_table, int64_t&
 struct Position
 {
     code_iterator code_it;  ///< The position in the code.
-    uint256* stack_top;     ///< The pointer to the stack top.
+    StackItem* stack_top;     ///< The pointer to the stack top.
 };
 
 /// Helpers for invoking instruction implementations of different signatures.
@@ -171,7 +173,7 @@ struct Position
 
 /// A helper to invoke the instruction implementation of the given opcode Op.
 template <Opcode Op>
-[[release_inline]] inline Position invoke(const CostTable& cost_table, const uint256* stack_bottom,
+[[release_inline]] inline Position invoke(const CostTable& cost_table, const StackItem* stack_bottom,
     Position pos, int64_t& gas, ExecutionState& state) noexcept
 {
     if (const auto status = check_requirements<Op>(cost_table, gas, pos.stack_top, stack_bottom);
@@ -330,6 +332,15 @@ evmc_result execute(VM& vm, const evmc_host_interface& host, evmc_host_context* 
 
     if (INTX_UNLIKELY(tracer != nullptr))
         tracer->notify_execution_end(result);
+
+    std::cout << "symbolic store:\n" << state.sstore;
+
+    std::cout << "\nrequirements:\n";
+    for (auto& r : state.requirements)
+    {
+        std::cout << r << "\n";
+    }
+    std::cout << std::flush;
 
     return result;
 }
