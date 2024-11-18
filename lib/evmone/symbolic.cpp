@@ -58,10 +58,10 @@ std::ostream& operator<< (std::ostream& os, const TernOp& op)
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     std::visit(Cases{
-        [&](const Concrete& i) { os << "0x" << intx::hex(i.concrete);  },
-        [&](const Sload& i) { os << "SLOAD " << *i.addr << " $" << &*i.store; },
-        [&](const Mload&i) { os << "MLOAD " << *i.addr << " $" << &*i.memory; },
-        [&](const Tload&i) { os << "TLOAD " << *i.addr << " $" << &*i.store; },
+        [&](const Pure& i) { os << "0x" << intx::hex(i.pure);  },
+        [&](const Sload& i) { os << "SLOAD(" << *i.addr << ", $" << &*i.store << ")"; },
+        [&](const Mload&i) { os << "MLOAD(" << *i.addr << ", $" << &*i.memory << ")"; },
+        [&](const Tload&i) { os << "TLOAD(" << *i.addr << ", $" << &*i.store << ")"; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }
@@ -69,12 +69,32 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const SymbolicUpdate& i)
+std::ostream& operator<<(std::ostream& os, const SetItem& i)
 {
     return os << *i.loc << " -> " << *i.val; 
 }
 
-std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicStorage> i)
+std::ostream& operator<<(std::ostream& os, const SetMem& i)
+{
+    return os << "set(" << i.index << ", " << i.size << ", <copied mem>)"; 
+}
+
+std::ostream& operator<<(std::ostream& os, const SetZeros& i)
+{
+    return os << "set_zeros(" << i.index << ", " << i.size << ")"; 
+}
+
+std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& si) {
+    std::visit(Cases{
+        [&](const SetItem& i) { os << i;  },
+        [&](const SetMem& i) { os << i; },
+        [&](const SetZeros&i) { os << i; }
+    }, si);
+    return os;
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicUpdates<T>> i)
 {
     if(i == nullptr) {
         os << "$0:              init\n" << std::flush;
@@ -90,7 +110,8 @@ std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {
     std::visit(Cases{
         [&](const Equal& i) { os << *i.sval << " == " << "0x" << intx::hex(i.val); },
         [&](const NotEqual& i) { os << *i.sval << " != " << "0x" << intx::hex(i.val); },
-        [&](const LessEqual& i) { os << *i.sval << " <= " << "0x" << intx::hex(i.val); }
+        [&](const LessEqual& i) { os << *i.sval << " <= " << "0x" << intx::hex(i.val); },
+        [&](const MemEqual& i) { os << "slice(" << i.off << ", " << i.size << ", $" << &*i.smemory << ") == <copied mem>"; }
     }, si);
     return os;
 }

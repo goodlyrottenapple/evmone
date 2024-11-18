@@ -48,14 +48,15 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     static_assert(
         Op == OP_CALL || Op == OP_CALLCODE || Op == OP_DELEGATECALL || Op == OP_STATICCALL);
 
-    const auto gas = stack.pop();
-    const auto dst = intx::be::trunc<evmc::address>(stack.pop());
-    const auto value = (Op == OP_STATICCALL || Op == OP_DELEGATECALL) ? 0 : stack.pop();
-    const auto has_value = value != 0;
-    const auto input_offset_u256 = stack.pop();
-    const auto input_size_u256 = stack.pop();
-    const auto output_offset_u256 = stack.pop();
-    const auto output_size_u256 = stack.pop();
+    const auto gas = stack.popStackItem();
+    const auto dstStackItem = stack.popStackItem(); 
+    const auto dst = intx::be::trunc<evmc::address>(dstStackItem.val);
+    const auto mvalue = (Op == OP_STATICCALL || Op == OP_DELEGATECALL) ? std::nullopt : std::optional<StackItem>(stack.popStackItem());
+    const auto has_value = mvalue.has_value();
+    const auto input_offset_u256 = stack.popStackItem();
+    const auto input_size_u256 = stack.popStackItem();
+    const auto output_offset_u256 = stack.popStackItem();
+    const auto output_size_u256 = stack.popStackItem();
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
@@ -66,16 +67,16 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!check_memory(gas_left, state.memory, input_offset_u256, input_size_u256))
+    if (!check_memory(gas_left, state.memory, input_offset_u256.val, input_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    if (!check_memory(gas_left, state.memory, output_offset_u256, output_size_u256))
+    if (!check_memory(gas_left, state.memory, output_offset_u256.val, output_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    const auto input_offset = static_cast<size_t>(input_offset_u256);
-    const auto input_size = static_cast<size_t>(input_size_u256);
-    const auto output_offset = static_cast<size_t>(output_offset_u256);
-    const auto output_size = static_cast<size_t>(output_size_u256);
+    const auto input_offset = static_cast<size_t>(input_offset_u256.val);
+    const auto input_size = static_cast<size_t>(input_size_u256.val);
+    const auto output_offset = static_cast<size_t>(output_offset_u256.val);
+    const auto output_size = static_cast<size_t>(output_size_u256.val);
 
     evmc_message msg{.kind = to_call_kind(Op)};
     msg.flags = (Op == OP_STATICCALL) ? uint32_t{EVMC_STATIC} : state.msg->flags;
@@ -84,13 +85,23 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     msg.code_address = dst;
     msg.sender = (Op == OP_DELEGATECALL) ? state.msg->sender : state.msg->recipient;
     msg.value =
-        (Op == OP_DELEGATECALL) ? state.msg->value : intx::be::store<evmc::uint256be>(value);
+        (Op == OP_DELEGATECALL) ? state.msg->value : (has_value ? intx::be::store<evmc::uint256be>(mvalue.value().val) : evmc_bytes32 {});
+
+    if (!std::holds_alternative<Pure>(*input_size_u256.sval))
+        state.requirements.push_back(Equal{input_size_u256.sval, input_size_u256.val});
 
     if (input_size > 0)
     {
         // input_offset may be garbage if input_size == 0.
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
+
+        if (!std::holds_alternative<Pure>(*input_offset_u256.sval))
+            state.requirements.push_back(Equal{input_offset_u256.sval, input_offset_u256.val});
+
+        auto mem_copy = std::make_unique<uint8_t[]>(input_size);
+        std::memcpy(mem_copy.get(), &state.memory[input_offset], input_size);
+        state.requirements.push_back(MemEqual{input_offset, input_size, state.smemory, std::move(mem_copy)});
     }
 
     auto cost = has_value ? CALL_VALUE_COST : 0;
@@ -108,8 +119,8 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
         return {EVMC_OUT_OF_GAS, gas_left};
 
     msg.gas = std::numeric_limits<int64_t>::max();
-    if (gas < msg.gas)
-        msg.gas = static_cast<int64_t>(gas);
+    if (gas.val < msg.gas)
+        msg.gas = static_cast<int64_t>(gas.val);
 
     if (state.rev >= EVMC_TANGERINE_WHISTLE)  // TODO: Always true for STATICCALL.
         msg.gas = std::min(msg.gas, gas_left - gas_left / 64);
@@ -125,19 +136,37 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     if (state.msg->depth >= 1024)
         return {EVMC_SUCCESS, gas_left};  // "Light" failure.
 
-    if (has_value && intx::be::load<uint256>(state.host.get_balance(state.msg->recipient)) < value)
+    if (has_value && intx::be::load<uint256>(state.host.get_balance(state.msg->recipient)) < mvalue.value().val)
         return {EVMC_SUCCESS, gas_left};  // "Light" failure.
 
     const auto result = state.host.call(msg);
     state.return_data.assign(result.output_data, result.output_size);
     stack.top() = result.status_code == EVMC_SUCCESS;
 
+    if (!std::holds_alternative<Pure>(*output_offset_u256.sval))
+        state.requirements.push_back(Equal{output_offset_u256.sval, output_offset_u256.val});
+    if (!std::holds_alternative<Pure>(*output_size_u256.sval))
+        state.requirements.push_back(Equal{output_size_u256.sval, output_size_u256.val});
+
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
+    {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
 
+        auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
+        std::memcpy(mem_copy.get(), result.output_data, copy_size);
+        state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, std::move(mem_copy)}, state.smemory});
+    }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
     state.gas_refund += result.gas_refund;
+
+    if (!std::holds_alternative<Pure>(*gas.sval))
+        state.requirements.push_back(Equal{gas.sval, gas.val});
+    if (!std::holds_alternative<Pure>(*dstStackItem.sval))
+        state.requirements.push_back(Equal{dstStackItem.sval, dstStackItem.val});
+    if (has_value && !std::holds_alternative<Pure>(*mvalue.value().sval))
+        state.requirements.push_back(Equal{mvalue.value().sval, mvalue.value().val});
+
     return {EVMC_SUCCESS, gas_left};
 }
 

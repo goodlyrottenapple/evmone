@@ -335,6 +335,8 @@ evmc_result execute(VM& vm, const evmc_host_interface& host, evmc_host_context* 
 
     std::cout << "symbolic store:\n" << state.sstore;
 
+    std::cout << "\nsymbolic memory:\n" << state.smemory;
+
     std::cout << "\nrequirements:\n";
     for (auto& r : state.requirements)
     {

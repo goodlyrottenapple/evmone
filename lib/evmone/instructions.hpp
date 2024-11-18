@@ -37,8 +37,10 @@ public:
     /// The value is returned by reference because the stack slot remains valid.
     [[nodiscard]] uint256& pop() noexcept { auto& r = *m_top--; return r.val; }
 
+    [[nodiscard]] StackItem& popStackItem() noexcept { return *m_top--; }
+
     /// Assigns the value to the stack top and moves the stack top pointer up.
-    void push(const uint256& value) noexcept { *++m_top = {value, std::make_shared<SymbolicStackItem>(Concrete {value})}; }
+    void push(const uint256& value) noexcept { *++m_top = {value, std::make_shared<SymbolicStackItem>(Pure {value})}; }
     void push(const StackItem& value) noexcept { *++m_top = value; }
 };
 
@@ -158,8 +160,8 @@ inline constexpr auto invalid = stop_impl<EVMC_INVALID_INSTRUCTION>;
 inline void add(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val + stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::add, stack[0].sval, stack[1].sval});
 }
@@ -167,8 +169,8 @@ inline void add(StackTop stack) noexcept
 inline void mul(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val * stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::mul, stack[0].sval, stack[1].sval});
 }
@@ -176,8 +178,8 @@ inline void mul(StackTop stack) noexcept
 inline void sub(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val - stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::sub, stack[0].sval, stack[1].sval});
 }
@@ -186,8 +188,8 @@ inline void div(StackTop stack) noexcept
 {
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val / v.val : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
 }
@@ -196,8 +198,8 @@ inline void sdiv(StackTop stack) noexcept
 {
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).quot : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
 }
@@ -206,8 +208,8 @@ inline void mod(StackTop stack) noexcept
 {
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val % v.val : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::mod, stack[0].sval, stack[1].sval});
 }
@@ -216,8 +218,8 @@ inline void smod(StackTop stack) noexcept
 {
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).rem : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::smod, stack[0].sval, stack[1].sval});
 }
@@ -228,8 +230,8 @@ inline void addmod(StackTop stack) noexcept
     const auto& y = stack[1];
     auto& m = stack[2];
     m.val = m.val != 0 ? intx::addmod(x.val, y.val, m.val) : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[2].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[2].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[2].sval = std::make_shared<SymbolicStackItem>(Pure {stack[2].val});
     else
         stack[2].sval = std::make_shared<SymbolicStackItem>(TernaryOp {TernOp::addmod, stack[0].sval, stack[1].sval, stack[2].sval});
 }
@@ -240,8 +242,8 @@ inline void mulmod(StackTop stack) noexcept
     const auto& y = stack[1];
     auto& m = stack[2];
     m.val = m.val != 0 ? intx::mulmod(x.val, y.val, m.val) : 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[2].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[2].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[2].sval = std::make_shared<SymbolicStackItem>(Pure {stack[2].val});
     else
         stack[2].sval = std::make_shared<SymbolicStackItem>(TernaryOp {TernOp::mulmod, stack[0].sval, stack[1].sval, stack[2].sval});
 }
@@ -260,11 +262,13 @@ inline Result exp(StackTop stack, int64_t gas_left, ExecutionState& state) noexc
 
     exponent.val = intx::exp(base.val, exponent.val);
     // TODO add requirement that any other exponent must have <=exponent_significant_bytes
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
+    {
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::exp, stack[0].sval, stack[1].sval});
-
+        if (!std::holds_alternative<Pure>(*exponent.sval)) state.requirements.push_back(Equal{exponent.sval, exponent.val});
+    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -299,8 +303,8 @@ inline void signextend(StackTop stack) noexcept
         for (size_t i = 3; i > sign_word_index; --i)
             x.val[i] = sign_ex;  // Clear extended words.
         
-        if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-            stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+        if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+            stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
         else
             stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::signextend, stack[0].sval, stack[1].sval});
     }
@@ -309,8 +313,8 @@ inline void signextend(StackTop stack) noexcept
 inline void lt(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val < stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::lt, stack[0].sval, stack[1].sval});
 }
@@ -318,8 +322,8 @@ inline void lt(StackTop stack) noexcept
 inline void gt(StackTop stack) noexcept
 {
     stack[1].val = stack[1].val < stack[0].val; // Arguments are swapped and < is used.
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::gt, stack[0].sval, stack[1].sval}); 
 }
@@ -327,8 +331,8 @@ inline void gt(StackTop stack) noexcept
 inline void slt(StackTop stack) noexcept
 {
     stack[1].val = slt(stack[0].val, stack[1].val);
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::slt, stack[0].sval, stack[1].sval}); 
 }
@@ -336,8 +340,8 @@ inline void slt(StackTop stack) noexcept
 inline void sgt(StackTop stack) noexcept
 {
     stack[1].val = slt(stack[1].val, stack[0].val);  // Arguments are swapped and SLT is used.
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::sgt, stack[0].sval, stack[1].sval}); 
 }
@@ -345,8 +349,8 @@ inline void sgt(StackTop stack) noexcept
 inline void eq(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val == stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::eq, stack[0].sval, stack[1].sval}); 
 }
@@ -354,8 +358,8 @@ inline void eq(StackTop stack) noexcept
 inline void iszero(StackTop stack) noexcept
 {
     stack[0].val = stack[0].val == 0;
-    if (std::holds_alternative<Concrete>(*stack[0].sval))
-        stack[0].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[0].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval))
+        stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
     else
         stack[0].sval = std::make_shared<SymbolicStackItem>(UnaryOp {UnOp::iszero, stack[0].sval}); 
 }
@@ -363,8 +367,8 @@ inline void iszero(StackTop stack) noexcept
 inline void and_(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val & stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::and_, stack[0].sval, stack[1].sval}); 
 }
@@ -372,8 +376,8 @@ inline void and_(StackTop stack) noexcept
 inline void or_(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val | stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::or_, stack[0].sval, stack[1].sval}); 
 }
@@ -381,8 +385,8 @@ inline void or_(StackTop stack) noexcept
 inline void xor_(StackTop stack) noexcept
 {
     stack[1].val = stack[0].val ^ stack[1].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::xor_, stack[0].sval, stack[1].sval}); 
 }
@@ -390,8 +394,8 @@ inline void xor_(StackTop stack) noexcept
 inline void not_(StackTop stack) noexcept
 {
     stack[0].val = ~ stack[0].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[0].sval = std::make_shared<SymbolicStackItem>(UnaryOp {UnOp::not_, stack[0].sval}); }
 
@@ -408,8 +412,8 @@ inline void byte(StackTop stack) noexcept
     const auto byte_index = index % 8;
     const auto byte = (word >> (byte_index * 8)) & byte_mask;
     x.val = byte;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::byte, stack[0].sval, stack[1].sval}); 
 }
@@ -417,8 +421,8 @@ inline void byte(StackTop stack) noexcept
 inline void shl(StackTop stack) noexcept
 {
     stack[1].val <<= stack[0].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::shl, stack[0].sval, stack[1].sval}); 
 }
@@ -426,8 +430,8 @@ inline void shl(StackTop stack) noexcept
 inline void shr(StackTop stack) noexcept
 {
     stack[1].val >>= stack[0].val;
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::shr, stack[0].sval, stack[1].sval}); 
 }
@@ -443,8 +447,8 @@ inline void sar(StackTop stack) noexcept
     const auto mask_shift = (y.val < 256) ? (256 - y.val[0]) : 0;
     x.val = (x.val >> y.val) | (sign_mask << mask_shift);
 
-    if (std::holds_alternative<Concrete>(*stack[0].sval) && std::holds_alternative<Concrete>(*stack[1].sval))
-        stack[1].sval = std::make_shared<SymbolicStackItem>(Concrete {stack[1].val});
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::sar, stack[0].sval, stack[1].sval}); 
 }
@@ -466,8 +470,11 @@ inline Result keccak256(StackTop stack, int64_t gas_left, ExecutionState& state)
 
     auto data = s != 0 ? &state.memory[i] : nullptr;
     size.val = intx::be::load<uint256>(ethash::keccak256(data, s));
-    // TODO add requirement that data and size must match exactly
-    size.sval = std::make_shared<SymbolicStackItem>(Concrete {size.val}); 
+
+    if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
+        stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
+    else
+        stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::keccak256, stack[0].sval, stack[1].sval}); 
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -490,7 +497,7 @@ inline Result balance(StackTop stack, int64_t gas_left, ExecutionState& state) n
 
     x.val = intx::be::load<uint256>(state.host.get_balance(addr));
     // TODO do we need some constraint on gas here? probably not...
-    x.sval = std::make_shared<SymbolicStackItem>(Concrete {x.val});
+    x.sval = std::make_shared<SymbolicStackItem>(Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -528,7 +535,7 @@ inline void calldataload(StackTop stack, ExecutionState& state) noexcept
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
     }
-    index.sval = std::make_shared<SymbolicStackItem>(Concrete {index.val});
+    index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
 }
 
 inline void calldatasize(StackTop stack, ExecutionState& state) noexcept
@@ -554,13 +561,26 @@ inline Result calldatacopy(StackTop stack, int64_t gas_left, ExecutionState& sta
     if (const auto cost = copy_cost(s); (gas_left -= cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
 
+    if (!std::holds_alternative<Pure>(*mem_index.sval))
+        state.requirements.push_back(Equal{mem_index.sval, mem_index.val});
+    if (!std::holds_alternative<Pure>(*input_index.sval))
+        state.requirements.push_back(Equal{input_index.sval, input_index.val});
+    if (!std::holds_alternative<Pure>(*size.sval))
+        state.requirements.push_back(Equal{size.sval, size.val});
+
     if (copy_size > 0)
+    {
         std::memcpy(&state.memory[dst], &state.msg->input_data[src], copy_size);
+        auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
+        std::memcpy(mem_copy.get(), &state.msg->input_data[src], copy_size);
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, std::move(mem_copy)}, state.smemory);
+    }        
 
     if (s - copy_size > 0)
+    {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-
-    // TODO update symbolic memory
+        state.smemory = std::make_shared<SymbolicMemory>(SetZeros {dst + copy_size, s - copy_size}, state.smemory);
+    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -618,7 +638,7 @@ inline void blobhash(StackTop stack, ExecutionState& state) noexcept
     index.val = (index.val < tx.blob_hashes_count) ?
                 intx::be::load<uint256>(tx.blob_hashes[static_cast<size_t>(index.val)]) :
                 0;
-    index.sval = std::make_shared<SymbolicStackItem>(Concrete {index.val});
+    index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
 }
 
 inline void blobbasefee(StackTop stack, ExecutionState& state) noexcept
@@ -638,7 +658,7 @@ inline Result extcodesize(StackTop stack, int64_t gas_left, ExecutionState& stat
     }
 
     x.val = state.host.get_code_size(addr);
-    x.sval = std::make_shared<SymbolicStackItem>(Concrete {x.val});
+    x.sval = std::make_shared<SymbolicStackItem>(Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -692,7 +712,7 @@ inline void returndataload(StackTop stack, ExecutionState& state) noexcept
 
         index.val = intx::be::unsafe::load<uint256>(data);
     }
-    index.sval = std::make_shared<SymbolicStackItem>(Concrete {index.val});
+    index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
 }
 
 inline void returndatasize(StackTop stack, ExecutionState& state) noexcept
@@ -758,7 +778,7 @@ inline Result extcodehash(StackTop stack, int64_t gas_left, ExecutionState& stat
     }
 
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
-    x.sval = std::make_shared<SymbolicStackItem>(Concrete {x.val});
+    x.sval = std::make_shared<SymbolicStackItem>(Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -773,7 +793,7 @@ inline void blockhash(StackTop stack, ExecutionState& state) noexcept
     const auto header =
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
     number.val = intx::be::load<uint256>(header);
-    number.sval = std::make_shared<SymbolicStackItem>(Concrete {number.val});
+    number.sval = std::make_shared<SymbolicStackItem>(Pure {number.val});
 }
 
 inline void coinbase(StackTop stack, ExecutionState& state) noexcept
@@ -821,7 +841,7 @@ inline Result mload(StackTop stack, int64_t gas_left, ExecutionState& state) noe
     if (!check_memory(gas_left, state.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    if (!std::holds_alternative<Concrete>(*index.sval))
+    if (!std::holds_alternative<Pure>(*index.sval))
         state.requirements.push_back(LessEqual{index.sval, index.val});
     index.val = intx::be::unsafe::load<uint256>(&state.memory[static_cast<size_t>(index.val)]);
     index.sval = std::make_shared<SymbolicStackItem>(Mload {index.sval, state.smemory});
@@ -837,8 +857,8 @@ inline Result mstore(StackTop stack, int64_t gas_left, ExecutionState& state) no
         return {EVMC_OUT_OF_GAS, gas_left};
 
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
-    state.smemory = std::make_shared<SymbolicStorage>(SymbolicStorage {SymbolicUpdate {index.sval, value.sval}, state.smemory});
-    if (!std::holds_alternative<Concrete>(*index.sval))
+    state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
+    if (!std::holds_alternative<Pure>(*index.sval))
         state.requirements.push_back(Equal{index.sval, index.val});
     return {EVMC_SUCCESS, gas_left};
 }
@@ -852,8 +872,8 @@ inline Result mstore8(StackTop stack, int64_t gas_left, ExecutionState& state) n
         return {EVMC_OUT_OF_GAS, gas_left};
 
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
-    state.smemory = std::make_shared<SymbolicStorage>(SymbolicStorage {SymbolicUpdate {index.sval, value.sval}, state.smemory});
-    if (!std::holds_alternative<Concrete>(*index.sval))
+    state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
+    if (!std::holds_alternative<Pure>(*index.sval))
         state.requirements.push_back(Equal{index.sval, index.val});
     return {EVMC_SUCCESS, gas_left};
 }
@@ -872,7 +892,8 @@ inline code_iterator jump_impl(ExecutionState& state, const StackItem& dst) noex
         return nullptr;
     }
 
-    // TODO add requirement for jump
+    if (!std::holds_alternative<Pure>(*dst.sval))
+        state.requirements.push_back(Equal{dst.sval, dst.val});
     return &state.analysis.baseline->executable_code()[static_cast<size_t>(dst.val[0])];
 }
 
@@ -888,6 +909,11 @@ inline code_iterator jumpi(StackTop stack, ExecutionState& state, code_iterator 
     const auto& dst = stack[0];
     const auto& cond = stack[1];
     // TODO add requirement for jump
+    if (!std::holds_alternative<Pure>(*cond.sval))
+    {
+        if(cond.val) state.requirements.push_back(NotEqual{cond.sval, 0});
+        else state.requirements.push_back(Equal{cond.sval, 0});
+    }
     return cond.val ? jump_impl(state, dst) : pos + 1;
 }
 
@@ -1033,7 +1059,7 @@ inline code_iterator push(StackTop stack, ExecutionState& /*state*/, code_iterat
         r.val[num_full_words - 1 - i] = intx::be::unsafe::load<uint64_t>(data);
         data += sizeof(uint64_t);
     }
-    r.sval = std::make_shared<SymbolicStackItem>(Concrete {r.val});
+    r.sval = std::make_shared<SymbolicStackItem>(Pure {r.val});
 
     return pos + (Len + 1);
 }
@@ -1136,7 +1162,7 @@ inline void dataload(StackTop stack, ExecutionState& state) noexcept
 
         index.val = intx::be::unsafe::load<uint256>(d);
     }
-    index.sval = std::make_shared<SymbolicStackItem>(Concrete {index.val});
+    index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
 }
 
 inline void datasize(StackTop stack, ExecutionState& state) noexcept

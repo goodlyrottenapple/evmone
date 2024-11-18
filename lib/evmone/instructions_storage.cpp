@@ -109,7 +109,7 @@ Result sload(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!std::holds_alternative<Concrete>(*stack[0].sval))
+    if (!std::holds_alternative<Pure>(*stack[0].sval))
         state.requirements.push_back(Equal{stack[0].sval, stack[0].val});
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
@@ -142,10 +142,10 @@ Result sstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
     if ((gas_left -= gas_cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
     state.gas_refund += gas_refund;
-    if (!std::holds_alternative<Concrete>(*stack[0].sval))
+    if (!std::holds_alternative<Pure>(*stack[0].sval))
         state.requirements.push_back(Equal{stack[0].sval, stack[0].val});
     state.sstore_touched_keys.insert(stack[0].sval);
-    state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SymbolicUpdate {stack[0].sval, stack[1].sval}, state.sstore});
+    state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {stack[0].sval, stack[1].sval}, state.sstore});
     return {EVMC_SUCCESS, gas_left};
 }
 }  // namespace evmone::instr::core

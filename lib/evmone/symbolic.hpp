@@ -15,38 +15,66 @@ struct Cases : Ts...
 namespace evmone
 {
 
-struct Concrete;
+struct Pure;
 struct Sload;
 struct Mload;
 struct Tload;
 struct UnaryOp;
 struct BinaryOp;
 struct TernaryOp;
-struct SymbolicStorage;
-struct SymbolicUpdate;
+template<typename>
+struct SymbolicUpdates;
+struct SetItem;
+struct Memcpy;
+struct Memset;
+
 
 using SymbolicStackItem =
-        std::variant<Concrete, Sload, Mload, Tload, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<Pure, Sload, Mload, Tload, UnaryOp, BinaryOp, TernaryOp>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
 
-struct SymbolicUpdate
+struct SetItem
 {
     std::shared_ptr<SymbolicStackItem> loc;
     std::shared_ptr<SymbolicStackItem> val;
-    friend std::ostream& operator<<(std::ostream&, const SymbolicUpdate&);
+    friend std::ostream& operator<<(std::ostream&, const SetItem&);
 };
 
-struct SymbolicStorage 
+struct SetMem
 {
-    SymbolicUpdate head;
-    std::shared_ptr<SymbolicStorage> tail;
-    friend std::ostream& operator<<(std::ostream&, std::shared_ptr<SymbolicStorage>);
+    size_t index;
+    size_t size;
+    std::shared_ptr<uint8_t[]> m_data;
+    friend std::ostream& operator<<(std::ostream&, const SetMem&);
 };
 
-struct Concrete
+struct SetZeros {
+    size_t index;
+    size_t size;
+    friend std::ostream& operator<<(std::ostream&, const SetZeros&);
+};
+
+using SymbolicMemoryUpdate =
+    std::variant<SetItem, SetMem, SetZeros>;
+std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
+
+
+template<typename T>
+struct SymbolicUpdates 
 {
-    uint256 concrete;
+    T head;
+    std::shared_ptr<SymbolicUpdates<T>> tail;
+    template<typename U>
+    friend std::ostream& operator<<(std::ostream&, std::shared_ptr<SymbolicUpdates<U>>);
+};
+
+using SymbolicStorage = SymbolicUpdates<SetItem>;
+using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
+
+struct Pure
+{
+    uint256 pure;
 };
 
 struct Sload 
@@ -58,7 +86,7 @@ struct Sload
 struct Mload 
 {
     std::shared_ptr<SymbolicStackItem> addr;
-    std::shared_ptr<SymbolicStorage> memory;
+    std::shared_ptr<SymbolicMemory> memory;
 };
 
 struct Tload 
@@ -108,10 +136,10 @@ struct StackItem
 struct Equal;
 struct NotEqual;
 struct LessEqual;
-struct AccessCold;
+struct MemEqual;
 
 using SymbolicRequirement =
-        std::variant<Equal, NotEqual, LessEqual>;
+        std::variant<Equal, NotEqual, LessEqual, MemEqual>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& i);
 
@@ -132,6 +160,19 @@ struct LessEqual
 {
     std::shared_ptr<SymbolicStackItem> sval;
     uint256 val;
+};
+
+struct FreeDeleter
+{
+    void operator()(uint8_t* p) const noexcept { std::free(p); }
+};
+
+struct MemEqual
+{
+    size_t off;
+    size_t size;
+    std::shared_ptr<SymbolicMemory> smemory;
+    std::shared_ptr<uint8_t[]> m_data;
 };
 
 }

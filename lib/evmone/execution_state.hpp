@@ -178,7 +178,7 @@ public:
     std::unordered_set<std::shared_ptr<SymbolicStackItem>> sstore_touched_keys;
     std::shared_ptr<SymbolicStorage> sstore = nullptr;
     std::shared_ptr<SymbolicStorage> ststore = nullptr;
-    std::shared_ptr<SymbolicStorage> smemory = nullptr;
+    std::shared_ptr<SymbolicMemory> smemory = nullptr;
 
 private:
     evmc_tx_context m_tx = {};
