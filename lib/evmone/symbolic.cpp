@@ -59,9 +59,8 @@ std::ostream& operator<< (std::ostream& os, const TernOp& op)
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     std::visit(Cases{
         [&](const Pure& i) { os << "0x" << intx::hex(i.pure);  },
-        [&](const Sload& i) { os << "SLOAD(" << *i.addr << ", $" << &*i.store << ")"; },
-        [&](const Mload&i) { os << "MLOAD(" << *i.addr << ", $" << &*i.memory << ")"; },
-        [&](const Tload&i) { os << "TLOAD(" << *i.addr << ", $" << &*i.store << ")"; },
+        [&](const Sload& i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
+        [&](const Mload&i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }
@@ -76,19 +75,28 @@ std::ostream& operator<<(std::ostream& os, const SetItem& i)
 
 std::ostream& operator<<(std::ostream& os, const SetMem& i)
 {
-    return os << "set(" << i.index << ", " << i.size << ", <copied mem>)"; 
+    os << "overlay ";
+    if(std::holds_alternative<std::shared_ptr<SymbolicMemory>>(i.memory)) {
+        auto& mem_ptr = std::get<std::shared_ptr<SymbolicMemory>>(i.memory);
+        if(mem_ptr) os << "$" << &*mem_ptr;
+        else os << "<empty memory>";
+    }
+    else os << "<bytes view>";
+    os << " at index " << i.index << ", size " << i.size; 
+    return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const SetZeros& i)
+std::ostream& operator<<(std::ostream& os, const Offset& i)
 {
-    return os << "set_zeros(" << i.index << ", " << i.size << ")"; 
+    return os << "slice at index" << *i.offset << ", size " << *i.size; 
 }
+
 
 std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& si) {
     std::visit(Cases{
         [&](const SetItem& i) { os << i;  },
         [&](const SetMem& i) { os << i; },
-        [&](const SetZeros&i) { os << i; }
+        [&](const Offset&i) { os << i; }
     }, si);
     return os;
 }
@@ -97,21 +105,29 @@ template <typename T>
 std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicUpdates<T>> i)
 {
     if(i == nullptr) {
-        os << "$0:              init\n" << std::flush;
+        os << std::flush;
         return os;
     }
-    os << "$" << &*i << ": " << i->head << " ;\n";
-    os << i->tail;
+    os << "$" << &*i << ": ";
+    if (std::holds_alternative<evmc_address>(i->head))
+    {
+        auto addr = std::get<evmc_address>(i->head);
+
+        os << "init storage of 0x" << evmc::hex({addr.bytes, sizeof(addr.bytes)});
+    }
+    else
+        os << std::get<T>(i->head);
+    os << " ;\n" << i->tail;
     return os; 
 }
 
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {
     std::visit(Cases{
-        [&](const Equal& i) { os << *i.sval << " == " << "0x" << intx::hex(i.val); },
-        [&](const NotEqual& i) { os << *i.sval << " != " << "0x" << intx::hex(i.val); },
-        [&](const LessEqual& i) { os << *i.sval << " <= " << "0x" << intx::hex(i.val); },
-        [&](const MemEqual& i) { os << "slice(" << i.off << ", " << i.size << ", $" << &*i.smemory << ") == <copied mem>"; }
+        [&](const Equal& i) { os << *i.sval << " == 0x" << intx::hex(i.val); },
+        [&](const NotEqual& i) { os << *i.sval << " != 0x" << intx::hex(i.val); },
+        [&](const LessEqual& i) { os << *i.sval << " <= 0x" << intx::hex(i.val); },
+        [&](const Greater& i) { os << *i.sval << " > 0x" << intx::hex(i.val); }
     }, si);
     return os;
 }

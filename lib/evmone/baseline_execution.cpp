@@ -296,7 +296,28 @@ evmc_result execute(VM& vm, const evmc_host_interface& host, evmc_host_context* 
     auto gas = msg.gas;
 
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
+    if (msg.depth < 1024)
+    {
+        auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
+        state.child = &state_child;
+    }
     state.reset(msg, rev, host, ctx, analysis.raw_code());
+    // only reset the symbolic state if this is a 0 depth call.
+    // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
+    if(msg.depth == 0) state.reset_symbolic();
+    assert(state.modified_sstores != nullptr);
+    state.child->modified_sstores = state.modified_sstores;
+    assert(state.requirements != nullptr);
+    state.child->requirements = state.requirements;
+
+    // set up the symbolic store by looking up any previous symbolic state at the recipient address,
+    // in case we are in a nested context
+    if (auto search = state.modified_sstores->find(msg.recipient); search != state.modified_sstores->end())
+    {
+        state.sstore = search->second;
+    }
+    else 
+        state.sstore = std::make_shared<SymbolicStorage>(msg.recipient, nullptr);
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
 
@@ -333,17 +354,25 @@ evmc_result execute(VM& vm, const evmc_host_interface& host, evmc_host_context* 
     if (INTX_UNLIKELY(tracer != nullptr))
         tracer->notify_execution_end(result);
 
-    std::cout << "symbolic store:\n" << state.sstore;
+    // make sure that the state of the symbolic store is captured at the exit of a call,
+    // in case we are in a nested context which will call into the same contract and make further
+    // modifications to its state
+    (*state.modified_sstores)[msg.recipient] = state.sstore;
 
-    std::cout << "\nsymbolic memory:\n" << state.smemory;
+    if (msg.depth == 0)
+    {  
+        std::cout << "symbolic store:\n" << state.sstore;
 
-    std::cout << "\nrequirements:\n";
-    for (auto& r : state.requirements)
-    {
-        std::cout << r << "\n";
+        std::cout << "\nsymbolic memory:\n" << state.smemory;
+
+        std::cout << "\nrequirements:\n";
+        assert(state.requirements != nullptr);
+        for (auto& r : *state.requirements)
+        {
+            std::cout << r << "\n";
+        }
+        std::cout << std::flush;
     }
-    std::cout << std::flush;
-
     return result;
 }
 

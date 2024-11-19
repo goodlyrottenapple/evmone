@@ -48,6 +48,9 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     static_assert(
         Op == OP_CALL || Op == OP_CALLCODE || Op == OP_DELEGATECALL || Op == OP_STATICCALL);
 
+    assert(state.child != nullptr);
+    assert(state.requirements != nullptr);
+
     const auto gas = stack.popStackItem();
     const auto dstStackItem = stack.popStackItem(); 
     const auto dst = intx::be::trunc<evmc::address>(dstStackItem.val);
@@ -60,6 +63,7 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
+    state.sreturn_data = nullptr;
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(dst) == EVMC_ACCESS_COLD)
     {
@@ -86,9 +90,11 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     msg.sender = (Op == OP_DELEGATECALL) ? state.msg->sender : state.msg->recipient;
     msg.value =
         (Op == OP_DELEGATECALL) ? state.msg->value : (has_value ? intx::be::store<evmc::uint256be>(mvalue.value().val) : evmc_bytes32 {});
+    state.child->scallvalue = 
+        (Op == OP_DELEGATECALL) ? state.scallvalue : (has_value ? mvalue.value().sval : nullptr);
 
     if (!std::holds_alternative<Pure>(*input_size_u256.sval))
-        state.requirements.push_back(Equal{input_size_u256.sval, input_size_u256.val});
+        state.requirements->push_back(Equal{input_size_u256.sval, input_size_u256.val});
 
     if (input_size > 0)
     {
@@ -96,12 +102,7 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
 
-        if (!std::holds_alternative<Pure>(*input_offset_u256.sval))
-            state.requirements.push_back(Equal{input_offset_u256.sval, input_offset_u256.val});
-
-        auto mem_copy = std::make_unique<uint8_t[]>(input_size);
-        std::memcpy(mem_copy.get(), &state.memory[input_offset], input_size);
-        state.requirements.push_back(MemEqual{input_offset, input_size, state.smemory, std::move(mem_copy)});
+        state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
     }
 
     auto cost = has_value ? CALL_VALUE_COST : 0;
@@ -141,31 +142,32 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
 
     const auto result = state.host.call(msg);
     state.return_data.assign(result.output_data, result.output_size);
+
+    state.sreturn_data = state.child->output_size != 0 ? 
+        std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {state.child->output_offset, state.child->output_size, state.child->smemory}, nullptr}) : nullptr;
+
     stack.top() = result.status_code == EVMC_SUCCESS;
 
     if (!std::holds_alternative<Pure>(*output_offset_u256.sval))
-        state.requirements.push_back(Equal{output_offset_u256.sval, output_offset_u256.val});
+        state.requirements->push_back(Equal{output_offset_u256.sval, output_offset_u256.val});
     if (!std::holds_alternative<Pure>(*output_size_u256.sval))
-        state.requirements.push_back(Equal{output_size_u256.sval, output_size_u256.val});
+        state.requirements->push_back(Equal{output_size_u256.sval, output_size_u256.val});
 
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
     {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
-
-        auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
-        std::memcpy(mem_copy.get(), result.output_data, copy_size);
-        state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, std::move(mem_copy)}, state.smemory});
+        state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
     state.gas_refund += result.gas_refund;
 
     if (!std::holds_alternative<Pure>(*gas.sval))
-        state.requirements.push_back(Equal{gas.sval, gas.val});
+        state.requirements->push_back(Equal{gas.sval, gas.val});
     if (!std::holds_alternative<Pure>(*dstStackItem.sval))
-        state.requirements.push_back(Equal{dstStackItem.sval, dstStackItem.val});
+        state.requirements->push_back(Equal{dstStackItem.sval, dstStackItem.val});
     if (has_value && !std::holds_alternative<Pure>(*mvalue.value().sval))
-        state.requirements.push_back(Equal{mvalue.value().sval, mvalue.value().val});
+        state.requirements->push_back(Equal{mvalue.value().sval, mvalue.value().val});
 
     return {EVMC_SUCCESS, gas_left};
 }
@@ -297,19 +299,20 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, gas_left};
 
-    const auto endowment = stack.pop();
-    const auto init_code_offset_u256 = stack.pop();
-    const auto init_code_size_u256 = stack.pop();
-    const auto salt = (Op == OP_CREATE2) ? stack.pop() : uint256{};
+    const auto endowment = stack.popStackItem();
+    const auto init_code_offset_u256 = stack.popStackItem();
+    const auto init_code_size_u256 = stack.popStackItem();
+    const auto msalt = (Op == OP_CREATE2) ? std::optional<StackItem>(stack.popStackItem()) : std::nullopt;
+    const auto has_salt = msalt.has_value();
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
 
-    if (!check_memory(gas_left, state.memory, init_code_offset_u256, init_code_size_u256))
+    if (!check_memory(gas_left, state.memory, init_code_offset_u256.val, init_code_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    const auto init_code_offset = static_cast<size_t>(init_code_offset_u256);
-    const auto init_code_size = static_cast<size_t>(init_code_size_u256);
+    const auto init_code_offset = static_cast<size_t>(init_code_offset_u256.val);
+    const auto init_code_size = static_cast<size_t>(init_code_size_u256.val);
 
     if (state.rev >= EVMC_SHANGHAI && init_code_size > 0xC000)
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -322,8 +325,8 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
     if (state.msg->depth >= 1024)
         return {EVMC_SUCCESS, gas_left};  // "Light" failure.
 
-    if (endowment != 0 &&
-        intx::be::load<uint256>(state.host.get_balance(state.msg->recipient)) < endowment)
+    if (endowment.val != 0 &&
+        intx::be::load<uint256>(state.host.get_balance(state.msg->recipient)) < endowment.val)
         return {EVMC_SUCCESS, gas_left};  // "Light" failure.
 
     evmc_message msg{.kind = to_call_kind(Op)};
@@ -336,6 +339,7 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
         // init_code_offset may be garbage if init_code_size == 0.
         msg.input_data = &state.memory[init_code_offset];
         msg.input_size = init_code_size;
+        state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
 
         if (state.rev >= EVMC_PRAGUE)
         {
@@ -346,17 +350,30 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
     }
     msg.sender = state.msg->recipient;
     msg.depth = state.msg->depth + 1;
-    msg.create2_salt = intx::be::store<evmc::bytes32>(salt);
-    msg.value = intx::be::store<evmc::uint256be>(endowment);
+    msg.create2_salt = intx::be::store<evmc::bytes32>(has_salt ? msalt.value().val : uint256{});
+    msg.value = intx::be::store<evmc::uint256be>(endowment.val);
 
     const auto result = state.host.call(msg);
     gas_left -= msg.gas - result.gas_left;
     state.gas_refund += result.gas_refund;
 
     state.return_data.assign(result.output_data, result.output_size);
-    if (result.status_code == EVMC_SUCCESS)
-        stack.top() = intx::be::load<uint256>(result.create_address);
+    state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, result.output_data}, nullptr});
 
+    if (!std::holds_alternative<Pure>(*endowment.sval))
+        state.requirements->push_back(Equal{endowment.sval, endowment.val});
+    if (!std::holds_alternative<Pure>(*init_code_offset_u256.sval))
+        state.requirements->push_back(Equal{init_code_offset_u256.sval, init_code_offset_u256.val});
+    if (!std::holds_alternative<Pure>(*init_code_size_u256.sval))
+        state.requirements->push_back(Equal{init_code_size_u256.sval, init_code_size_u256.val});
+    if (has_salt && !std::holds_alternative<Pure>(*msalt.value().sval))
+        state.requirements->push_back(Equal{msalt.value().sval, msalt.value().val});
+
+    if (result.status_code == EVMC_SUCCESS)
+    {
+        stack[0].val = intx::be::load<uint256>(result.create_address);
+        stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
+    }
     return {EVMC_SUCCESS, gas_left};
 }
 

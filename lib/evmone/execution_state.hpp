@@ -27,7 +27,6 @@ using evmc::bytes;
 using evmc::bytes_view;
 using intx::uint256;
 
-
 /// Provides memory for EVM stack.
 class StackSpace
 {
@@ -148,7 +147,6 @@ public:
     void clear() noexcept { m_size = 0; }
 };
 
-
 /// Generic execution state for generic instructions implementations.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class ExecutionState
@@ -174,12 +172,16 @@ public:
     std::optional<bytes> deploy_container;
 
     /// Symbolic storage
-    std::vector<SymbolicRequirement> requirements;
-    std::unordered_set<std::shared_ptr<SymbolicStackItem>> sstore_touched_keys;
+    ExecutionState* child = nullptr;
+    std::shared_ptr<std::vector<SymbolicRequirement>> requirements = nullptr;
+    std::shared_ptr<SymbolicStorageMap> modified_sstores = nullptr;
     std::shared_ptr<SymbolicStorage> sstore = nullptr;
     std::shared_ptr<SymbolicStorage> ststore = nullptr;
     std::shared_ptr<SymbolicMemory> smemory = nullptr;
-
+    std::shared_ptr<SymbolicStackItem> scaller = nullptr;
+    std::shared_ptr<SymbolicStackItem> scallvalue = nullptr;
+    std::shared_ptr<SymbolicMemory> scalldata = nullptr;
+    std::shared_ptr<SymbolicMemory> sreturn_data = nullptr;
 private:
     evmc_tx_context m_tx = {};
 
@@ -225,11 +227,17 @@ public:
         deploy_container = {};
         m_tx = {};
         call_stack = {};
-        requirements = {};
-        sstore_touched_keys = {};
-        sstore = nullptr;
-        ststore = nullptr;
         smemory = nullptr;
+        ststore = nullptr;
+    }
+
+    void reset_symbolic() noexcept
+    {
+        if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
+        requirements->clear();
+        if(!modified_sstores) modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+        modified_sstores->clear();
+        sstore = nullptr;
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }

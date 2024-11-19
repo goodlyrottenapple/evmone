@@ -262,12 +262,13 @@ inline Result exp(StackTop stack, int64_t gas_left, ExecutionState& state) noexc
 
     exponent.val = intx::exp(base.val, exponent.val);
     // TODO add requirement that any other exponent must have <=exponent_significant_bytes
+    assert(state.requirements != nullptr);
     if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
         stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
     else
     {
         stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::exp, stack[0].sval, stack[1].sval});
-        if (!std::holds_alternative<Pure>(*exponent.sval)) state.requirements.push_back(Equal{exponent.sval, exponent.val});
+        if (!std::holds_alternative<Pure>(*exponent.sval)) state.requirements->push_back(Equal{exponent.sval, exponent.val});
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -513,7 +514,8 @@ inline void caller(StackTop stack, ExecutionState& state) noexcept
 
 inline void callvalue(StackTop stack, ExecutionState& state) noexcept
 {
-    stack.push(intx::be::load<uint256>(state.msg->value));
+    if (state.scallvalue) stack.push({intx::be::load<uint256>(state.msg->value), state.scallvalue});
+    else stack.push(intx::be::load<uint256>(state.msg->value));
 }
 
 inline void calldataload(StackTop stack, ExecutionState& state) noexcept
@@ -522,6 +524,7 @@ inline void calldataload(StackTop stack, ExecutionState& state) noexcept
 
     if (state.msg->input_size < index.val) {
         index.val = 0;
+        index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
     }
     else
     {
@@ -534,8 +537,8 @@ inline void calldataload(StackTop stack, ExecutionState& state) noexcept
 
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
+        index.sval = std::make_shared<SymbolicStackItem>(Load {std::make_shared<SymbolicStackItem>(Pure {index.val}), state.scalldata});
     }
-    index.sval = std::make_shared<SymbolicStackItem>(Pure {index.val});
 }
 
 inline void calldatasize(StackTop stack, ExecutionState& state) noexcept
@@ -561,25 +564,24 @@ inline Result calldatacopy(StackTop stack, int64_t gas_left, ExecutionState& sta
     if (const auto cost = copy_cost(s); (gas_left -= cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
 
+    assert(state.requirements != nullptr);
     if (!std::holds_alternative<Pure>(*mem_index.sval))
-        state.requirements.push_back(Equal{mem_index.sval, mem_index.val});
+        state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
     if (!std::holds_alternative<Pure>(*input_index.sval))
-        state.requirements.push_back(Equal{input_index.sval, input_index.val});
+        state.requirements->push_back(Equal{input_index.sval, input_index.val});
     if (!std::holds_alternative<Pure>(*size.sval))
-        state.requirements.push_back(Equal{size.sval, size.val});
+        state.requirements->push_back(Equal{size.sval, size.val});
 
     if (copy_size > 0)
     {
         std::memcpy(&state.memory[dst], &state.msg->input_data[src], copy_size);
-        auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
-        std::memcpy(mem_copy.get(), &state.msg->input_data[src], copy_size);
-        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, std::move(mem_copy)}, state.smemory);
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, state.scalldata}, state.smemory);
     }        
 
     if (s - copy_size > 0)
     {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-        state.smemory = std::make_shared<SymbolicMemory>(SetZeros {dst + copy_size, s - copy_size}, state.smemory);
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst + copy_size, s - copy_size, {}}, state.smemory);
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -591,8 +593,6 @@ inline void codesize(StackTop stack, ExecutionState& state) noexcept
 
 inline Result codecopy(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
 {
-    // TODO: Similar to calldatacopy().
-
     const auto& mem_index = stack[0];
     const auto& input_index = stack[1];
     const auto& size = stack[2];
@@ -609,13 +609,25 @@ inline Result codecopy(StackTop stack, int64_t gas_left, ExecutionState& state) 
     if (const auto cost = copy_cost(s); (gas_left -= cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
 
+    if (!std::holds_alternative<Pure>(*mem_index.sval))
+        state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
+    if (!std::holds_alternative<Pure>(*input_index.sval))
+        state.requirements->push_back(Equal{input_index.sval, input_index.val});
+    if (!std::holds_alternative<Pure>(*size.sval))
+        state.requirements->push_back(Equal{size.sval, size.val});
+
     // TODO: Add unit tests for each combination of conditions.
     if (copy_size > 0)
+    {
         std::memcpy(&state.memory[dst], &state.original_code[src], copy_size);
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, &state.original_code[src]}, state.smemory);
 
+    }
     if (s - copy_size > 0)
+    {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-    // TODO update symbolic memory
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst + copy_size, s - copy_size, {}}, state.smemory);
+    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -688,15 +700,39 @@ inline Result extcodecopy(StackTop stack, int64_t gas_left, ExecutionState& stat
             (max_buffer_size < input_index.val) ? max_buffer_size : static_cast<size_t>(input_index.val);
         const auto dst = static_cast<size_t>(mem_index.val);
         const auto num_bytes_copied = state.host.copy_code(addr, src, &state.memory[dst], s);
+
+        assert(state.requirements != nullptr);
+        if (!std::holds_alternative<Pure>(*size.sval))
+            state.requirements->push_back(Greater{size.sval, 0});
+
         if (const auto num_bytes_to_clear = s - num_bytes_copied; num_bytes_to_clear > 0)
+        {
             std::memset(&state.memory[dst + num_bytes_copied], 0, num_bytes_to_clear);
+            state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst + num_bytes_copied, num_bytes_to_clear, {}}, state.smemory);
+        }
+        else {
+            // the host call to `copy_code` succeeded, hence we need to make an immutable copy of the data and overlay it onto
+            // symbolic memory at the correct index
+            auto mem_copy = std::make_shared<uint8_t[]>(s);
+            std::memcpy(mem_copy.get(), &state.memory[dst], s);
+            state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, s, mem_copy}, state.smemory);
+            // because we are copying exact memory here, we require all the symbolic args
+            // to be exactly the same as the concrete values, otherwise we would get a different
+            // result from state.host.copy_code
+            if (!std::holds_alternative<Pure>(*stack[0].sval))
+                state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
+            if (!std::holds_alternative<Pure>(*input_index.sval))
+                state.requirements->push_back(Equal{input_index.sval, input_index.val});
+            if (!std::holds_alternative<Pure>(*mem_index.sval))
+                state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
+        }
     }
-    // TODO update symbolic memory
     return {EVMC_SUCCESS, gas_left};
 }
 
 inline void returndataload(StackTop stack, ExecutionState& state) noexcept
 {
+    // unsupported by monad atm
     auto& index = stack[0];
 
     if (state.return_data.size() < index.val)
@@ -760,9 +796,16 @@ inline Result returndatacopy(StackTop stack, int64_t gas_left, ExecutionState& s
             return {EVMC_OUT_OF_GAS, gas_left};
 
         if (s > 0)
+        {
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
+
+            assert(state.requirements != nullptr);
+            if (!std::holds_alternative<Pure>(*size.sval))
+                state.requirements->push_back(Greater{size.sval, 0});
+            auto sreturn_data_offset = std::make_shared<SymbolicMemory>(Offset {input_index.sval, size.sval}, state.sreturn_data);
+            state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, s, sreturn_data_offset}, state.smemory);
+        }
     }
-    // TODO update symbolic memory
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -777,6 +820,8 @@ inline Result extcodehash(StackTop stack, int64_t gas_left, ExecutionState& stat
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
+    if (!std::holds_alternative<Pure>(*x.sval))
+        state.requirements->push_back(Equal{x.sval, x.val});
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
     x.sval = std::make_shared<SymbolicStackItem>(Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
@@ -792,6 +837,8 @@ inline void blockhash(StackTop stack, ExecutionState& state) noexcept
     const auto n = static_cast<int64_t>(number.val);
     const auto header =
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
+    if (!std::holds_alternative<Pure>(*number.sval))
+        state.requirements->push_back(Equal{number.sval, number.val});
     number.val = intx::be::load<uint256>(header);
     number.sval = std::make_shared<SymbolicStackItem>(Pure {number.val});
 }
@@ -842,7 +889,7 @@ inline Result mload(StackTop stack, int64_t gas_left, ExecutionState& state) noe
         return {EVMC_OUT_OF_GAS, gas_left};
 
     if (!std::holds_alternative<Pure>(*index.sval))
-        state.requirements.push_back(LessEqual{index.sval, index.val});
+        state.requirements->push_back(Equal{index.sval, index.val});
     index.val = intx::be::unsafe::load<uint256>(&state.memory[static_cast<size_t>(index.val)]);
     index.sval = std::make_shared<SymbolicStackItem>(Mload {index.sval, state.smemory});
     return {EVMC_SUCCESS, gas_left};
@@ -858,8 +905,9 @@ inline Result mstore(StackTop stack, int64_t gas_left, ExecutionState& state) no
 
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
     state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
+    assert(state.requirements != nullptr);
     if (!std::holds_alternative<Pure>(*index.sval))
-        state.requirements.push_back(Equal{index.sval, index.val});
+        state.requirements->push_back(Equal{index.sval, index.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -873,8 +921,9 @@ inline Result mstore8(StackTop stack, int64_t gas_left, ExecutionState& state) n
 
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
     state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
+    assert(state.requirements != nullptr);
     if (!std::holds_alternative<Pure>(*index.sval))
-        state.requirements.push_back(Equal{index.sval, index.val});
+        state.requirements->push_back(Equal{index.sval, index.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -891,9 +940,9 @@ inline code_iterator jump_impl(ExecutionState& state, const StackItem& dst) noex
         state.status = EVMC_BAD_JUMP_DESTINATION;
         return nullptr;
     }
-
+    assert(state.requirements != nullptr);
     if (!std::holds_alternative<Pure>(*dst.sval))
-        state.requirements.push_back(Equal{dst.sval, dst.val});
+        state.requirements->push_back(Equal{dst.sval, dst.val});
     return &state.analysis.baseline->executable_code()[static_cast<size_t>(dst.val[0])];
 }
 
@@ -908,11 +957,11 @@ inline code_iterator jumpi(StackTop stack, ExecutionState& state, code_iterator 
 {
     const auto& dst = stack[0];
     const auto& cond = stack[1];
-    // TODO add requirement for jump
+    assert(state.requirements != nullptr);
     if (!std::holds_alternative<Pure>(*cond.sval))
     {
-        if(cond.val) state.requirements.push_back(NotEqual{cond.sval, 0});
-        else state.requirements.push_back(Equal{cond.sval, 0});
+        if(cond.val) state.requirements->push_back(NotEqual{cond.sval, 0});
+        else state.requirements->push_back(Equal{cond.sval, 0});
     }
     return cond.val ? jump_impl(state, dst) : pos + 1;
 }
@@ -975,9 +1024,10 @@ inline void tload(StackTop stack, ExecutionState& state) noexcept
     auto& x = stack[0];
     const auto key = intx::be::store<evmc::bytes32>(x.val);
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
+    if (!std::holds_alternative<Pure>(*x.sval))
+        state.requirements->push_back(Equal{x.sval, x.val});
     x.val = intx::be::load<uint256>(value);
-    // TODO replace nullptr with actual symbolic transient storage
-    x.sval = std::make_shared<SymbolicStackItem>(Tload {x.sval, nullptr});
+    x.sval = std::make_shared<SymbolicStackItem>(Load<SymbolicStorage> {x.sval, state.ststore});
 }
 
 inline Result tstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
@@ -988,7 +1038,7 @@ inline Result tstore(StackTop stack, int64_t gas_left, ExecutionState& state) no
     const auto key = intx::be::store<evmc::bytes32>(stack[0].val);
     const auto value = intx::be::store<evmc::bytes32>(stack[1].val);
     state.host.set_transient_storage(state.msg->recipient, key, value);
-    // TODO update symbolic transient storage
+    state.ststore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {stack[0].sval, stack[1].sval}, state.ststore});
     return {EVMC_SUCCESS, gas_left};
 }
 

@@ -2,6 +2,7 @@
 
 #include "baseline.hpp"
 #include <intx/intx.hpp>
+#include <map>
 #include <variant>
 
 using intx::uint256;
@@ -16,23 +17,66 @@ namespace evmone
 {
 
 struct Pure;
-struct Sload;
-struct Mload;
-struct Tload;
+template<typename>
+struct Load;
 struct UnaryOp;
 struct BinaryOp;
 struct TernaryOp;
 template<typename>
 struct SymbolicUpdates;
-struct SetItem;
-struct Memcpy;
-struct Memset;
 
+struct SetItem;
+struct Offset;
+struct SetMem;
+
+
+using SymbolicMemoryUpdate =
+    std::variant<SetItem, SetMem, Offset>;
+std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
+
+
+
+using SymbolicStorage = SymbolicUpdates<SetItem>;
+
+
+struct MapComparator
+{
+    bool operator()( const evmc_address& a, const evmc_address& b ) const 
+    {
+        for (size_t i = 0; i < 20; i++)
+        {
+            if(a.bytes[i]<b.bytes[i]) return true;
+        }
+        return false;
+    }
+};
+
+using SymbolicStorageMap = std::map<evmc_address, std::shared_ptr<SymbolicStorage>, MapComparator>;
+
+using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
+
+using Sload = Load<SymbolicStorage>;
+using Mload = Load<SymbolicMemory>;
 
 using SymbolicStackItem =
-        std::variant<Pure, Sload, Mload, Tload, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<Pure, Sload, Mload, UnaryOp, BinaryOp, TernaryOp>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
+
+
+struct Offset {
+    std::shared_ptr<SymbolicStackItem> offset;
+    std::shared_ptr<SymbolicStackItem> size;
+    friend std::ostream& operator<<(std::ostream&, const Offset&);
+};
+
+struct SetMem
+{
+    size_t index;
+    size_t size;
+    std::variant<std::shared_ptr<SymbolicMemory>, std::shared_ptr<uint8_t[]>, bytes_view> memory;
+    friend std::ostream& operator<<(std::ostream&, const SetMem&);
+};
 
 struct SetItem
 {
@@ -41,58 +85,26 @@ struct SetItem
     friend std::ostream& operator<<(std::ostream&, const SetItem&);
 };
 
-struct SetMem
-{
-    size_t index;
-    size_t size;
-    std::shared_ptr<uint8_t[]> m_data;
-    friend std::ostream& operator<<(std::ostream&, const SetMem&);
-};
-
-struct SetZeros {
-    size_t index;
-    size_t size;
-    friend std::ostream& operator<<(std::ostream&, const SetZeros&);
-};
-
-using SymbolicMemoryUpdate =
-    std::variant<SetItem, SetMem, SetZeros>;
-std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
-
-
 template<typename T>
 struct SymbolicUpdates 
 {
-    T head;
+    // we shouuld only ever have one evmc_address per SymbolicUpdates list
+    std::variant<T, evmc_address> head;
     std::shared_ptr<SymbolicUpdates<T>> tail;
     template<typename U>
     friend std::ostream& operator<<(std::ostream&, std::shared_ptr<SymbolicUpdates<U>>);
 };
-
-using SymbolicStorage = SymbolicUpdates<SetItem>;
-using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
 
 struct Pure
 {
     uint256 pure;
 };
 
-struct Sload 
+template<typename T>
+struct Load 
 {
     std::shared_ptr<SymbolicStackItem> addr;
-    std::shared_ptr<SymbolicStorage> store;
-};
-
-struct Mload 
-{
-    std::shared_ptr<SymbolicStackItem> addr;
-    std::shared_ptr<SymbolicMemory> memory;
-};
-
-struct Tload 
-{
-    std::shared_ptr<SymbolicStackItem> addr;
-    std::shared_ptr<SymbolicStorage> store;
+    std::shared_ptr<T> symbolic_store;
 };
 
 enum class UnOp { iszero, not_ };
@@ -113,7 +125,6 @@ struct BinaryOp
     std::shared_ptr<SymbolicStackItem> first;
     std::shared_ptr<SymbolicStackItem> second;
 };
-
 
 enum class TernOp { addmod, mulmod };
 std::ostream& operator<< (std::ostream&, const TernOp&);
@@ -136,10 +147,10 @@ struct StackItem
 struct Equal;
 struct NotEqual;
 struct LessEqual;
-struct MemEqual;
+struct Greater;
 
 using SymbolicRequirement =
-        std::variant<Equal, NotEqual, LessEqual, MemEqual>;
+        std::variant<Equal, NotEqual, LessEqual, Greater>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& i);
 
@@ -162,17 +173,10 @@ struct LessEqual
     uint256 val;
 };
 
-struct FreeDeleter
+struct Greater
 {
-    void operator()(uint8_t* p) const noexcept { std::free(p); }
-};
-
-struct MemEqual
-{
-    size_t off;
-    size_t size;
-    std::shared_ptr<SymbolicMemory> smemory;
-    std::shared_ptr<uint8_t[]> m_data;
+    std::shared_ptr<SymbolicStackItem> sval;
+    uint256 val;
 };
 
 }
