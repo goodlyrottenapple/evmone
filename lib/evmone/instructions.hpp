@@ -40,8 +40,16 @@ public:
     [[nodiscard]] StackItem& popStackItem() noexcept { return *m_top--; }
 
     /// Assigns the value to the stack top and moves the stack top pointer up.
-    void push(const uint256& value) noexcept { *++m_top = {value, std::make_shared<SymbolicStackItem>(Pure {value})}; }
-    void push(const StackItem& value) noexcept { *++m_top = value; }
+    void push(const uint256& value) noexcept { 
+        ++m_top;
+        std::memset((void*)m_top, 0, sizeof(StackItem));
+        *m_top = {value, std::make_shared<SymbolicStackItem>(Pure {value})}; 
+    }
+    void push(const StackItem& value) noexcept { 
+        ++m_top;
+        std::memset((void*)m_top, 0, sizeof(StackItem));
+        *m_top = value; 
+    }
 };
 
 
@@ -620,7 +628,10 @@ inline Result codecopy(StackTop stack, int64_t gas_left, ExecutionState& state) 
     if (copy_size > 0)
     {
         std::memcpy(&state.memory[dst], &state.original_code[src], copy_size);
-        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, &state.original_code[src]}, state.smemory);
+
+        auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
+        std::memcpy(mem_copy.get(), &state.original_code[src], copy_size);
+        state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, copy_size, std::move(mem_copy)}, state.smemory);
 
     }
     if (s - copy_size > 0)

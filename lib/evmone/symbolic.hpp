@@ -74,7 +74,7 @@ struct SetMem
 {
     size_t index;
     size_t size;
-    std::variant<std::shared_ptr<SymbolicMemory>, std::shared_ptr<uint8_t[]>, bytes_view> memory;
+    std::variant<std::shared_ptr<SymbolicMemory>, std::shared_ptr<uint8_t[]>> memory;
     friend std::ostream& operator<<(std::ostream&, const SetMem&);
 };
 

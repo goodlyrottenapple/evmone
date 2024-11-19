@@ -358,7 +358,10 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
     state.gas_refund += result.gas_refund;
 
     state.return_data.assign(result.output_data, result.output_size);
-    state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, result.output_data}, nullptr});
+
+    auto mem_copy = std::make_unique<uint8_t[]>(result.output_size);
+    std::memcpy(mem_copy.get(), result.output_data, result.output_size);
+    state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, std::move(mem_copy)}, nullptr});
 
     if (!std::holds_alternative<Pure>(*endowment.sval))
         state.requirements->push_back(Equal{endowment.sval, endowment.val});

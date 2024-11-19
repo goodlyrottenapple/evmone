@@ -81,7 +81,7 @@ std::ostream& operator<<(std::ostream& os, const SetMem& i)
         if(mem_ptr) os << "$" << &*mem_ptr;
         else os << "<empty memory>";
     }
-    else os << "<bytes view>";
+    else os << "<bytes>";
     os << " at index " << i.index << ", size " << i.size; 
     return os;
 }
