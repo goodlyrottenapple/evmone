@@ -12,7 +12,9 @@
 namespace evmone
 {
 using evmc::bytes_view;
+template <bool>
 class ExecutionState;
+template <bool>
 class VM;
 
 namespace baseline
@@ -77,11 +79,13 @@ public:
 EVMC_EXPORT CodeAnalysis analyze(bytes_view code, bool eof_enabled);
 
 /// Executes in Baseline interpreter using EVMC-compatible parameters.
+template <bool isSymbolic>
 evmc_result execute(evmc_vm* vm, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
 
 /// Executes in Baseline interpreter with the pre-processed code.
-EVMC_EXPORT evmc_result execute(VM&, const evmc_host_interface& host, evmc_host_context* ctx,
+template <bool isSymbolic>
+EVMC_EXPORT evmc_result execute(VM<isSymbolic>&, const evmc_host_interface& host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message& msg, const CodeAnalysis& analysis) noexcept;
 
 }  // namespace baseline

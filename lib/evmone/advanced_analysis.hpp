@@ -33,12 +33,12 @@ static_assert(sizeof(BlockInfo) == 8);
 
 
 /// The execution state specialized for the Advanced interpreter.
-struct AdvancedExecutionState : ExecutionState
+struct AdvancedExecutionState : ExecutionState<false>
 {
     int64_t gas_left = 0;
 
     /// Pointer to the stack top.
-    StackTop stack = stack_space.bottom();
+    StackTop<false> stack = stack_space.bottom();
 
     /// The gas cost of the current block.
     ///

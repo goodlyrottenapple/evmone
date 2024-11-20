@@ -28,19 +28,20 @@ using evmc::bytes_view;
 using intx::uint256;
 
 /// Provides memory for EVM stack.
+template <bool isSymbolic>
 class StackSpace
 {
-    static StackItem* allocate() noexcept
+    static StackItem<isSymbolic>* allocate() noexcept
     {
-        static constexpr auto alignment = std::bit_ceil(sizeof(StackItem));
-        static constexpr auto size = limit * sizeof(StackItem);
+        static constexpr auto alignment = std::bit_ceil(sizeof(StackItem<isSymbolic>));
+        static constexpr auto size = limit * sizeof(StackItem<isSymbolic>);
 #ifdef _MSC_VER
         // MSVC doesn't support aligned_alloc() but _aligned_malloc() can be used instead.
         const auto p = _aligned_malloc(size, alignment);
 #else
         const auto p = std::aligned_alloc(alignment, size);
 #endif
-        return static_cast<StackItem*>(p);
+        return static_cast<StackItem<isSymbolic>*>(p);
     }
 
     struct Deleter
@@ -59,7 +60,7 @@ class StackSpace
 
     /// The storage allocated for maximum possible number of items.
     /// Items are aligned to 256 bits for better packing in cache lines.
-    std::unique_ptr<StackItem, Deleter> m_stack_space;
+    std::unique_ptr<StackItem<isSymbolic>, Deleter> m_stack_space;
 
 public:
     /// The maximum number of EVM stack items.
@@ -68,7 +69,7 @@ public:
     StackSpace() noexcept : m_stack_space{allocate()} {}
 
     /// Returns the pointer to the "bottom", i.e. below the stack space.
-    [[nodiscard, clang::no_sanitize("bounds")]] StackItem* bottom() noexcept
+    [[nodiscard, clang::no_sanitize("bounds")]] StackItem<isSymbolic>* bottom() noexcept
     {
         return m_stack_space.get() - 1;
     }
@@ -149,6 +150,7 @@ public:
 
 /// Generic execution state for generic instructions implementations.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
+template <bool isSymbolic>
 class ExecutionState
 {
 public:
@@ -172,7 +174,7 @@ public:
     std::optional<bytes> deploy_container;
 
     /// Symbolic storage
-    ExecutionState* child = nullptr;
+    ExecutionState<isSymbolic>* child = nullptr;
     std::shared_ptr<std::vector<SymbolicRequirement>> requirements = nullptr;
     std::shared_ptr<SymbolicStorageMap> modified_sstores = nullptr;
     std::shared_ptr<SymbolicStorage> sstore = nullptr;
@@ -199,7 +201,7 @@ public:
     /// Stack space allocation.
     ///
     /// This is the last field to make other fields' offsets of reasonable values.
-    StackSpace stack_space;
+    StackSpace<isSymbolic> stack_space;
 
     ExecutionState() noexcept = default;
 
@@ -233,11 +235,13 @@ public:
 
     void reset_symbolic() noexcept
     {
-        if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
-        requirements->clear();
-        if(!modified_sstores) modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
-        modified_sstores->clear();
-        sstore = nullptr;
+        if constexpr (isSymbolic) {
+            if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
+            requirements->clear();
+            if(!modified_sstores) modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+            modified_sstores->clear();
+            sstore = nullptr;
+        }
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }

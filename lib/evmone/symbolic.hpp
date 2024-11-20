@@ -137,12 +137,19 @@ struct TernaryOp
     std::shared_ptr<SymbolicStackItem> third;
 };
 
-struct StackItem
-{
+template <bool Symbolic>
+struct StackItem;
+
+template <>
+struct StackItem<false> {
+    uint256 val;
+};
+
+template <>
+struct StackItem<true> {
     uint256 val;
     std::shared_ptr<SymbolicStackItem> sval;
 };
-
 
 struct Equal;
 struct NotEqual;

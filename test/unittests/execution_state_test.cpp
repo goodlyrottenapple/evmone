@@ -7,11 +7,11 @@
 #include <gtest/gtest.h>
 #include <type_traits>
 
-static_assert(std::is_default_constructible_v<evmone::ExecutionState>);
-static_assert(std::is_move_constructible_v<evmone::ExecutionState>);
-static_assert(!std::is_copy_constructible_v<evmone::ExecutionState>);
-static_assert(std::is_move_assignable_v<evmone::ExecutionState>);
-static_assert(!std::is_copy_assignable_v<evmone::ExecutionState>);
+static_assert(std::is_default_constructible_v<evmone::ExecutionState<false>>);
+static_assert(std::is_move_constructible_v<evmone::ExecutionState<false>>);
+static_assert(!std::is_copy_constructible_v<evmone::ExecutionState<false>>);
+static_assert(std::is_move_assignable_v<evmone::ExecutionState<false>>);
+static_assert(!std::is_copy_assignable_v<evmone::ExecutionState<false>>);
 
 static_assert(std::is_default_constructible_v<evmone::advanced::AdvancedExecutionState>);
 static_assert(std::is_move_constructible_v<evmone::advanced::AdvancedExecutionState>);
@@ -25,7 +25,7 @@ TEST(execution_state, construct)
     msg.gas = -1;
     const evmc_host_interface host_interface{};
     const uint8_t code[]{0x0f};
-    const evmone::ExecutionState st{
+    const evmone::ExecutionState<false> st{
         msg, EVMC_MAX_REVISION, host_interface, nullptr, {code, std::size(code)}};
 
     EXPECT_EQ(st.memory.size(), 0);
@@ -39,7 +39,7 @@ TEST(execution_state, construct)
 
 TEST(execution_state, default_construct)
 {
-    const evmone::ExecutionState st;
+    const evmone::ExecutionState<false> st;
 
     EXPECT_EQ(st.memory.size(), 0);
     EXPECT_EQ(st.msg, nullptr);

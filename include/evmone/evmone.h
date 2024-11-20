@@ -13,6 +13,8 @@ extern "C" {
 #endif
 
 EVMC_EXPORT struct evmc_vm* evmc_create_evmone(void) EVMC_NOEXCEPT;
+EVMC_EXPORT struct evmc_vm* evmc_create_evmone_symbolic(void) EVMC_NOEXCEPT;
+
 
 #if __cplusplus
 }

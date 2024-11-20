@@ -12,6 +12,8 @@ namespace evmone::advanced
 evmc_result execute(AdvancedExecutionState& state, const AdvancedCodeAnalysis& analysis) noexcept
 {
     state.analysis.advanced = &analysis;  // Allow accessing the analysis by instructions.
+    if(!state.modified_sstores) state.modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+    if(!state.requirements) state.requirements = std::make_shared<std::vector<SymbolicRequirement>>();
 
     const auto* instr = state.analysis.advanced->instrs.data();  // Get the first instruction.
     while (instr != nullptr)

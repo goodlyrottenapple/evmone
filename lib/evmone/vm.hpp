@@ -17,6 +17,7 @@
 namespace evmone
 {
 /// The evmone EVMC instance.
+template <bool isSymbolic>
 class VM : public evmc_vm
 {
 public:
@@ -24,15 +25,15 @@ public:
     bool validate_eof = false;
 
 private:
-    std::vector<ExecutionState> m_execution_states;
-    std::unique_ptr<Tracer> m_first_tracer;
+    std::vector<ExecutionState<isSymbolic>> m_execution_states;
+    std::unique_ptr<Tracer<isSymbolic>> m_first_tracer;
 
 public:
     VM() noexcept;
 
-    [[nodiscard]] ExecutionState& get_execution_state(size_t depth) noexcept;
+    [[nodiscard]] ExecutionState<isSymbolic>& get_execution_state(size_t depth) noexcept;
 
-    void add_tracer(std::unique_ptr<Tracer> tracer) noexcept
+    void add_tracer(std::unique_ptr<Tracer<isSymbolic>> tracer) noexcept
     {
         // Find the first empty unique_ptr and assign the new tracer to it.
         auto* end = &m_first_tracer;
@@ -41,6 +42,7 @@ public:
         *end = std::move(tracer);
     }
 
-    [[nodiscard]] Tracer* get_tracer() const noexcept { return m_first_tracer.get(); }
+    [[nodiscard]] Tracer<isSymbolic>* get_tracer() const noexcept { return m_first_tracer.get(); }
 };
+
 }  // namespace evmone

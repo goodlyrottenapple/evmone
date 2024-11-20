@@ -42,20 +42,22 @@ consteval evmc_call_kind to_call_kind(Opcode op) noexcept
     }
 }
 
-template <Opcode Op>
-Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
+template <bool isSymbolic, Opcode Op>
+Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(
         Op == OP_CALL || Op == OP_CALLCODE || Op == OP_DELEGATECALL || Op == OP_STATICCALL);
 
-    assert(state.child != nullptr);
-    assert(state.requirements != nullptr);
+    if constexpr (isSymbolic) {
+        assert(state.child != nullptr);
+        assert(state.requirements != nullptr);
+    }
 
     const auto gas = stack.popStackItem();
     const auto dstStackItem = stack.popStackItem(); 
     const auto dst = intx::be::trunc<evmc::address>(dstStackItem.val);
-    const auto mvalue = (Op == OP_STATICCALL || Op == OP_DELEGATECALL) ? std::nullopt : std::optional<StackItem>(stack.popStackItem());
-    const auto has_value = mvalue.has_value();
+    const auto mvalue = (Op == OP_STATICCALL || Op == OP_DELEGATECALL) ? std::nullopt : std::optional<StackItem<isSymbolic>>(stack.popStackItem());
+    const auto has_value = mvalue.has_value() && mvalue.value().val != 0;
     const auto input_offset_u256 = stack.popStackItem();
     const auto input_size_u256 = stack.popStackItem();
     const auto output_offset_u256 = stack.popStackItem();
@@ -90,11 +92,13 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     msg.sender = (Op == OP_DELEGATECALL) ? state.msg->sender : state.msg->recipient;
     msg.value =
         (Op == OP_DELEGATECALL) ? state.msg->value : (has_value ? intx::be::store<evmc::uint256be>(mvalue.value().val) : evmc_bytes32 {});
-    state.child->scallvalue = 
-        (Op == OP_DELEGATECALL) ? state.scallvalue : (has_value ? mvalue.value().sval : nullptr);
+    if constexpr (isSymbolic) {
+        state.child->scallvalue = 
+            (Op == OP_DELEGATECALL) ? state.scallvalue : (has_value ? mvalue.value().sval : nullptr);
 
-    if (!std::holds_alternative<Pure>(*input_size_u256.sval))
-        state.requirements->push_back(Equal{input_size_u256.sval, input_size_u256.val});
+        if (!std::holds_alternative<Pure>(*input_size_u256.sval))
+            state.requirements->push_back(Equal{input_size_u256.sval, input_size_u256.val});
+    }
 
     if (input_size > 0)
     {
@@ -102,7 +106,7 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
 
-        state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
+        if constexpr (isSymbolic) state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
     }
 
     auto cost = has_value ? CALL_VALUE_COST : 0;
@@ -143,46 +147,62 @@ Result call_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexce
     const auto result = state.host.call(msg);
     state.return_data.assign(result.output_data, result.output_size);
 
-    state.sreturn_data = state.child->output_size != 0 ? 
-        std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {state.child->output_offset, state.child->output_size, state.child->smemory}, nullptr}) : nullptr;
+    if constexpr (isSymbolic)
+        state.sreturn_data = state.child->output_size != 0 ? 
+            std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {state.child->output_offset, state.child->output_size, state.child->smemory}, nullptr}) : nullptr;
 
     stack.top() = result.status_code == EVMC_SUCCESS;
 
-    if (!std::holds_alternative<Pure>(*output_offset_u256.sval))
-        state.requirements->push_back(Equal{output_offset_u256.sval, output_offset_u256.val});
-    if (!std::holds_alternative<Pure>(*output_size_u256.sval))
-        state.requirements->push_back(Equal{output_size_u256.sval, output_size_u256.val});
+    if constexpr (isSymbolic) {
+        if (!std::holds_alternative<Pure>(*output_offset_u256.sval))
+            state.requirements->push_back(Equal{output_offset_u256.sval, output_offset_u256.val});
+        if (!std::holds_alternative<Pure>(*output_size_u256.sval))
+            state.requirements->push_back(Equal{output_size_u256.sval, output_size_u256.val});
+    }
 
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
     {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
-        state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
+        if constexpr (isSymbolic) state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
     state.gas_refund += result.gas_refund;
 
-    if (!std::holds_alternative<Pure>(*gas.sval))
-        state.requirements->push_back(Equal{gas.sval, gas.val});
-    if (!std::holds_alternative<Pure>(*dstStackItem.sval))
-        state.requirements->push_back(Equal{dstStackItem.sval, dstStackItem.val});
-    if (has_value && !std::holds_alternative<Pure>(*mvalue.value().sval))
-        state.requirements->push_back(Equal{mvalue.value().sval, mvalue.value().val});
+    if constexpr (isSymbolic) {
+        if (!std::holds_alternative<Pure>(*gas.sval))
+            state.requirements->push_back(Equal{gas.sval, gas.val});
+        if (!std::holds_alternative<Pure>(*dstStackItem.sval))
+            state.requirements->push_back(Equal{dstStackItem.sval, dstStackItem.val});
+        if (has_value && !std::holds_alternative<Pure>(*mvalue.value().sval))
+            state.requirements->push_back(Equal{mvalue.value().sval, mvalue.value().val});
+    }
 
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result call_impl<OP_CALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result call_impl<OP_STATICCALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result call_impl<OP_DELEGATECALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result call_impl<OP_CALLCODE>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
+template Result call_impl<true, OP_CALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, OP_STATICCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, OP_DELEGATECALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, OP_CALLCODE>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
 
-template <Opcode Op>
-Result extcall_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
+template Result call_impl<false, OP_CALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result call_impl<false, OP_STATICCALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result call_impl<false, OP_DELEGATECALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result call_impl<false, OP_CALLCODE>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+
+
+
+template <bool isSymbolic, Opcode Op>
+Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(Op == OP_EXTCALL || Op == OP_EXTDELEGATECALL || Op == OP_EXTSTATICCALL);
 
@@ -284,15 +304,22 @@ Result extcall_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noe
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result extcall_impl<OP_EXTCALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result extcall_impl<OP_EXTSTATICCALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result extcall_impl<OP_EXTDELEGATECALL>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
+template Result extcall_impl<true, OP_EXTCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result extcall_impl<true, OP_EXTSTATICCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result extcall_impl<true, OP_EXTDELEGATECALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
 
-template <Opcode Op>
-Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
+template Result extcall_impl<false, OP_EXTCALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result extcall_impl<false, OP_EXTSTATICCALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result extcall_impl<false, OP_EXTDELEGATECALL>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+
+template <bool isSymbolic, Opcode Op>
+Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(Op == OP_CREATE || Op == OP_CREATE2);
 
@@ -302,7 +329,7 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
     const auto endowment = stack.popStackItem();
     const auto init_code_offset_u256 = stack.popStackItem();
     const auto init_code_size_u256 = stack.popStackItem();
-    const auto msalt = (Op == OP_CREATE2) ? std::optional<StackItem>(stack.popStackItem()) : std::nullopt;
+    const auto msalt = (Op == OP_CREATE2) ? std::optional<StackItem<isSymbolic>>(stack.popStackItem()) : std::nullopt;
     const auto has_salt = msalt.has_value();
 
     stack.push(0);  // Assume failure.
@@ -339,7 +366,7 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
         // init_code_offset may be garbage if init_code_size == 0.
         msg.input_data = &state.memory[init_code_offset];
         msg.input_size = init_code_size;
-        state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
+        if constexpr (isSymbolic) state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
 
         if (state.rev >= EVMC_PRAGUE)
         {
@@ -359,29 +386,33 @@ Result create_impl(StackTop stack, int64_t gas_left, ExecutionState& state) noex
 
     state.return_data.assign(result.output_data, result.output_size);
 
-    auto mem_copy = std::make_unique<uint8_t[]>(result.output_size);
-    std::memcpy(mem_copy.get(), result.output_data, result.output_size);
-    state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, std::move(mem_copy)}, nullptr});
+    if constexpr (isSymbolic) {
+        auto mem_copy = std::make_unique<uint8_t[]>(result.output_size);
+        std::memcpy(mem_copy.get(), result.output_data, result.output_size);
+        state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, std::move(mem_copy)}, nullptr});
 
-    if (!std::holds_alternative<Pure>(*endowment.sval))
-        state.requirements->push_back(Equal{endowment.sval, endowment.val});
-    if (!std::holds_alternative<Pure>(*init_code_offset_u256.sval))
-        state.requirements->push_back(Equal{init_code_offset_u256.sval, init_code_offset_u256.val});
-    if (!std::holds_alternative<Pure>(*init_code_size_u256.sval))
-        state.requirements->push_back(Equal{init_code_size_u256.sval, init_code_size_u256.val});
-    if (has_salt && !std::holds_alternative<Pure>(*msalt.value().sval))
-        state.requirements->push_back(Equal{msalt.value().sval, msalt.value().val});
+        if (!std::holds_alternative<Pure>(*endowment.sval))
+            state.requirements->push_back(Equal{endowment.sval, endowment.val});
+        if (!std::holds_alternative<Pure>(*init_code_offset_u256.sval))
+            state.requirements->push_back(Equal{init_code_offset_u256.sval, init_code_offset_u256.val});
+        if (!std::holds_alternative<Pure>(*init_code_size_u256.sval))
+            state.requirements->push_back(Equal{init_code_size_u256.sval, init_code_size_u256.val});
+        if (has_salt && !std::holds_alternative<Pure>(*msalt.value().sval))
+            state.requirements->push_back(Equal{msalt.value().sval, msalt.value().val});
+    }
 
     if (result.status_code == EVMC_SUCCESS)
     {
         stack[0].val = intx::be::load<uint256>(result.create_address);
-        stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
+        if constexpr (isSymbolic) stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
     }
+
     return {EVMC_SUCCESS, gas_left};
 }
 
+template <bool isSymbolic>
 Result eofcreate(
-    StackTop stack, int64_t gas_left, ExecutionState& state, code_iterator& pos) noexcept
+    StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state, code_iterator& pos) noexcept
 {
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, gas_left};
@@ -447,8 +478,18 @@ Result eofcreate(
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result create_impl<OP_CREATE>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
-template Result create_impl<OP_CREATE2>(
-    StackTop stack, int64_t gas_left, ExecutionState& state) noexcept;
+template Result eofcreate(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state, code_iterator& pos) noexcept;
+template Result eofcreate(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state, code_iterator& pos) noexcept;
+
+template Result create_impl<true, OP_CREATE>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result create_impl<true, OP_CREATE2>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+
+template Result create_impl<false, OP_CREATE>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result create_impl<false, OP_CREATE2>(
+    StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 }  // namespace evmone::instr::core

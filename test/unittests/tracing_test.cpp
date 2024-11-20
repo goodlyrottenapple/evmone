@@ -21,14 +21,14 @@ private:
     evmc::VM m_baseline_vm;
 
 protected:
-    evmone::VM& vm;
+    evmone::VM<false>& vm;
     evmc::MockedHost host;
 
     std::ostringstream trace_stream;
 
     tracing()
       : m_baseline_vm{evmc_create_evmone()},
-        vm{*static_cast<evmone::VM*>(m_baseline_vm.get_raw_pointer())}
+        vm{*static_cast<evmone::VM<false>*>(m_baseline_vm.get_raw_pointer())}
     {}
 
     std::string trace(
@@ -44,7 +44,7 @@ protected:
         return result;
     }
 
-    class OpcodeTracer final : public evmone::Tracer
+    class OpcodeTracer final : public evmone::Tracer<false>
     {
         std::string m_name;
         std::ostringstream& m_trace;
@@ -58,9 +58,9 @@ protected:
 
         void on_execution_end(const evmc_result& /*result*/) noexcept override { m_code = {}; }
 
-        void on_instruction_start(uint32_t pc, const evmone::StackItem* /*stack_top*/,
+        void on_instruction_start(uint32_t pc, const evmone::StackItem<false>* /*stack_top*/,
             int /*stack_height*/, int64_t /*gas*/,
-            const evmone::ExecutionState& /*state*/) noexcept override
+            const evmone::ExecutionState<false>& /*state*/) noexcept override
         {
             const auto opcode = m_code[pc];
             m_trace << m_name << pc << ":" << evmone::instr::traits[opcode].name << " ";
@@ -72,7 +72,7 @@ protected:
         {}
     };
 
-    class Inspector final : public evmone::Tracer
+    class Inspector final : public evmone::Tracer<false>
     {
         bytes m_last_code;
 
@@ -84,9 +84,9 @@ protected:
 
         void on_execution_end(const evmc_result& /*result*/) noexcept override {}
 
-        void on_instruction_start(uint32_t /*pc*/, const evmone::StackItem* /*stack_top*/,
+        void on_instruction_start(uint32_t /*pc*/, const evmone::StackItem<false>* /*stack_top*/,
             int /*stack_height*/, int64_t /*gas*/,
-            const evmone::ExecutionState& /*state*/) noexcept override
+            const evmone::ExecutionState<false>& /*state*/) noexcept override
         {}
 
     public:

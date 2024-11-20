@@ -93,7 +93,8 @@ constexpr auto sstore_costs = []() noexcept {
 }();
 }  // namespace
 
-Result sload(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
+template <bool isSymbolic>
+Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
     const auto key = intx::be::store<evmc::bytes32>(x.val);
@@ -109,18 +110,23 @@ Result sload(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    assert(state.requirements != nullptr);
-    if (!std::holds_alternative<Pure>(*stack[0].sval))
-        state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
+    if constexpr (isSymbolic) {
+        assert(state.requirements != nullptr);
+        if (!std::holds_alternative<Pure>(*stack[0].sval))
+            state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
+    }
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
-    // state.sstore_touched_keys.insert(x.sval);
-    x.sval = std::make_shared<SymbolicStackItem>(Sload {x.sval, state.sstore});
+    if constexpr (isSymbolic) x.sval = std::make_shared<SymbolicStackItem>(Sload {x.sval, state.sstore});
 
     return {EVMC_SUCCESS, gas_left};
 }
 
-Result sstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
+template Result sload(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sload(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+
+template <bool isSymbolic>
+Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, gas_left};
@@ -143,10 +149,17 @@ Result sstore(StackTop stack, int64_t gas_left, ExecutionState& state) noexcept
     if ((gas_left -= gas_cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
     state.gas_refund += gas_refund;
-    assert(state.requirements != nullptr);
-    if (!std::holds_alternative<Pure>(*stack[0].sval))
-        state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
-    state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {stack[0].sval, stack[1].sval}, state.sstore});
+
+    if constexpr (isSymbolic) {
+        assert(state.requirements != nullptr);
+        if (!std::holds_alternative<Pure>(*stack[0].sval))
+            state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
+        state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {stack[0].sval, stack[1].sval}, state.sstore});
+    }
     return {EVMC_SUCCESS, gas_left};
 }
+
+template Result sstore(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sstore(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+
 }  // namespace evmone::instr::core
