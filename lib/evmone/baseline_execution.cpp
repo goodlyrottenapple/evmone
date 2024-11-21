@@ -7,7 +7,7 @@
 #include "eof.hpp"
 #include "execution_state.hpp"
 #include "instructions.hpp"
-#include "symbolic.cpp"
+#include "symbolic.hpp"
 #include "vm.hpp"
 #include <memory>
 #include <iostream>
@@ -374,22 +374,24 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // make sure that the state of the symbolic store is captured at the exit of a call,
     // in case we are in a nested context which will call into the same contract and make further
     // modifications to its state
-    if constexpr (isSymbolic) (*state.modified_sstores)[msg.recipient] = state.sstore;
+    if constexpr (isSymbolic) {
+        (*state.modified_sstores)[msg.recipient] = state.sstore;
 
-    // if (msg.depth == 0)
-    // {  
-    //     std::cout << "symbolic store:\n" << state.sstore;
+        if (msg.depth == 0)
+        {  
+            std::cout << "symbolic store:\n" << state.sstore;
 
-    //     std::cout << "\nsymbolic memory:\n" << state.smemory;
+            std::cout << "\nsymbolic memory:\n" << state.smemory;
 
-    //     std::cout << "\nrequirements:\n";
-    //     assert(state.requirements != nullptr);
-    //     for (auto& r : *state.requirements)
-    //     {
-    //         std::cout << r << "\n";
-    //     }
-    //     std::cout << std::flush;
-    // }
+            std::cout << "\nrequirements:\n";
+            assert(state.requirements != nullptr);
+            for (auto& r : *state.requirements)
+            {
+                std::cout << r << "\n";
+            }
+            std::cout << std::flush;
+        }
+    }
     return result;
 }
 

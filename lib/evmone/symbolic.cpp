@@ -51,7 +51,7 @@ std::ostream& operator<< (std::ostream& os, const TernOp& op)
     switch (op)
     {
         case TernOp::addmod : return os << "addmod" ;
-        case TernOp::mulmod: return os << "mulmod";
+        case TernOp::mulmod : return os << "mulmod";
     };
     return os;
 }
@@ -81,7 +81,7 @@ std::ostream& operator<<(std::ostream& os, const SetMem& i)
         if(mem_ptr) os << "$" << &*mem_ptr;
         else os << "<empty memory>";
     }
-    else os << "<bytes>";
+    else os << "<bytes view>";
     os << " at index " << i.index << ", size " << i.size; 
     return os;
 }
@@ -120,6 +120,9 @@ std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicUpdates<T>> i
     os << " ;\n" << i->tail;
     return os; 
 }
+
+template std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicStorage> i);
+template std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicMemory> i);
 
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {

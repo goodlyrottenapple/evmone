@@ -97,7 +97,7 @@ template <>
 VM<true>::VM() noexcept
   : evmc_vm{
         EVMC_ABI_VERSION,
-        "evmone",
+        "evmone_symbolic",
         PROJECT_VERSION,
         evmone::destroy<true>,
         evmone::baseline::execute<true>,
