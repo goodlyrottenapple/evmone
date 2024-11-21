@@ -58,7 +58,6 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     const auto output_offset_u256 = stack.popStackItem();
     const auto output_size_u256 = stack.popStackItem();
     if constexpr (isSymbolic) {
-        assert(state.child != nullptr);
         state.symbolic_value_matches_concrete(gas, dstStackItem, input_offset_u256, input_size_u256, output_offset_u256, output_size_u256);
         if (mvalue.has_value()) state.symbolic_value_matches_concrete(mvalue.value());
     }
@@ -93,8 +92,10 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     msg.value =
         (Op == OP_DELEGATECALL) ? state.msg->value : (has_non_zero_value ? intx::be::store<evmc::uint256be>(mvalue.value().val) : evmc_bytes32 {});
     if constexpr (isSymbolic)
-        state.child->scallvalue = 
-            (Op == OP_DELEGATECALL) ? state.scallvalue : (has_non_zero_value ? mvalue.value().sval : nullptr);
+        // if this check fails, we have reached the maximum stack depth of 1024, so this call will probably fail
+        if (state.child != nullptr)
+            state.child->scallvalue = 
+                (Op == OP_DELEGATECALL) ? state.scallvalue : (has_non_zero_value ? mvalue.value().sval : nullptr);
 
     if (input_size > 0)
     {
@@ -102,7 +103,9 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
 
-        if constexpr (isSymbolic) state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
+        if constexpr (isSymbolic) 
+            if (state.child != nullptr)
+                state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
     }
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
@@ -144,7 +147,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     state.return_data.assign(result.output_data, result.output_size);
 
     if constexpr (isSymbolic)
-        state.sreturn_data = state.child->output_size != 0 ? 
+        state.sreturn_data = state.child && state.child->output_size != 0 ? 
             std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {state.child->output_offset, state.child->output_size, state.child->smemory}, nullptr}) : nullptr;
 
     stack.top() = result.status_code == EVMC_SUCCESS;
@@ -152,8 +155,9 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
     {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
-        if constexpr (isSymbolic) 
-            state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
+        if constexpr (isSymbolic)
+            if (state.child != nullptr)
+                state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
@@ -313,7 +317,6 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     const auto msalt = (Op == OP_CREATE2) ? std::optional<StackItem<isSymbolic>>(stack.popStackItem()) : std::nullopt;
     const auto has_salt = msalt.has_value();
     if constexpr (isSymbolic) {
-        assert(state.child != nullptr);
         state.symbolic_value_matches_concrete(endowment, init_code_offset_u256, init_code_size_u256);
         if (has_salt) state.symbolic_value_matches_concrete(msalt.value());
     }
@@ -352,7 +355,9 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         // init_code_offset may be garbage if init_code_size == 0.
         msg.input_data = &state.memory[init_code_offset];
         msg.input_size = init_code_size;
-        if constexpr (isSymbolic) state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
+        if constexpr (isSymbolic) 
+            if (state.child != nullptr)
+                state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
 
         if (state.rev >= EVMC_PRAGUE)
         {

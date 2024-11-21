@@ -307,11 +307,6 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     auto gas = msg.gas;
 
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
-    if (msg.depth < 1024)
-    {
-        auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
-        state.child = &state_child;
-    }
     state.reset(msg, rev, host, ctx, analysis.raw_code());
     // only reset the symbolic state if this is a 0 depth call.
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
@@ -322,10 +317,17 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             if(!state.modified_sstores) state.modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
             if(!state.requirements) state.requirements = std::make_shared<std::vector<SymbolicRequirement>>();
         }
-        state.child->modified_sstores = state.modified_sstores;
-        assert(state.requirements != nullptr);
-        state.child->requirements = state.requirements;
 
+        if (msg.depth < 1024)
+        {
+            auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
+            state.child = &state_child;
+            assert(state.child != nullptr);
+            assert(state.modified_sstores != nullptr);
+            state.child->modified_sstores = state.modified_sstores;
+            assert(state.requirements != nullptr);
+            state.child->requirements = state.requirements;
+        }
         // set up the symbolic store by looking up any previous symbolic state at the recipient address,
         // in case we are in a nested context
         if (auto search = state.modified_sstores->find(msg.recipient); search != state.modified_sstores->end())
@@ -377,20 +379,20 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     if constexpr (isSymbolic) {
         (*state.modified_sstores)[msg.recipient] = state.sstore;
 
-        if (msg.depth == 0)
-        {  
-            std::cout << "symbolic store:\n" << state.sstore;
+        // if (msg.depth == 0)
+        // {  
+        //     std::cout << "symbolic store:\n" << state.sstore;
 
-            std::cout << "\nsymbolic memory:\n" << state.smemory;
+        //     std::cout << "\nsymbolic memory:\n" << state.smemory;
 
-            std::cout << "\nrequirements:\n";
-            assert(state.requirements != nullptr);
-            for (auto& r : *state.requirements)
-            {
-                std::cout << r << "\n";
-            }
-            std::cout << std::flush;
-        }
+        //     std::cout << "\nrequirements:\n";
+        //     assert(state.requirements != nullptr);
+        //     for (auto& r : *state.requirements)
+        //     {
+        //         std::cout << r << "\n";
+        //     }
+        //     std::cout << std::flush;
+        // }
     }
     return result;
 }
