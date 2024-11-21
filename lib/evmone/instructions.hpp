@@ -468,7 +468,7 @@ inline void not_(StackTop<isSymbolic> stack) noexcept
 {
     stack[0].val = ~ stack[0].val;
     if constexpr (isSymbolic) {
-        if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[0].sval))
+        if (std::holds_alternative<Pure>(*stack[0].sval))
             stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
         else
             stack[0].sval = std::make_shared<SymbolicStackItem>(UnaryOp {UnOp::not_, stack[0].sval}); 
