@@ -97,6 +97,7 @@ template <bool isSymbolic>
 Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(x);
     const auto key = intx::be::store<evmc::bytes32>(x.val);
 
     if (state.rev >= EVMC_BERLIN &&
@@ -108,12 +109,6 @@ Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymb
             instr::cold_sload_cost - instr::warm_storage_read_cost;
         if ((gas_left -= additional_cold_sload_cost) < 0)
             return {EVMC_OUT_OF_GAS, gas_left};
-    }
-
-    if constexpr (isSymbolic) {
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*stack[0].sval))
-            state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
     }
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
@@ -131,11 +126,15 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, gas_left};
 
+    const auto& key_index = stack[0];
+    const auto& val_index = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(key_index);
+
     if (state.rev >= EVMC_ISTANBUL && gas_left <= 2300)
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    const auto key = intx::be::store<evmc::bytes32>(stack[0].val);
-    const auto value = intx::be::store<evmc::bytes32>(stack[1].val);
+    const auto key = intx::be::store<evmc::bytes32>(key_index.val);
+    const auto value = intx::be::store<evmc::bytes32>(val_index.val);
 
     const auto gas_cost_cold =
         (state.rev >= EVMC_BERLIN &&
@@ -150,12 +149,9 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
         return {EVMC_OUT_OF_GAS, gas_left};
     state.gas_refund += gas_refund;
 
-    if constexpr (isSymbolic) {
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*stack[0].sval))
-            state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
-        state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {stack[0].sval, stack[1].sval}, state.sstore});
-    }
+    if constexpr (isSymbolic)
+        state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {key_index.sval, val_index.sval}, state.sstore});
+    
     return {EVMC_SUCCESS, gas_left};
 }
 

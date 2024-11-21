@@ -243,6 +243,17 @@ public:
             sstore = nullptr;
         }
     }
+    
+    void symbolic_value_matches_concrete(const StackItem<isSymbolic>& i, std::convertible_to<const StackItem<isSymbolic>&> auto... is)
+    {
+        if constexpr ( sizeof...( is ) > 0 )
+            symbolic_value_matches_concrete( is... );
+        else
+            assert (requirements != nullptr);
+
+        if (!std::holds_alternative<Pure>(*i.sval))
+            requirements->push_back(Equal{i.sval, i.val});
+    }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }
 

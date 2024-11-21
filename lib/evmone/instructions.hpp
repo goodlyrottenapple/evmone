@@ -303,14 +303,12 @@ inline Result exp(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
 
     exponent.val = intx::exp(base.val, exponent.val);
     if constexpr (isSymbolic) {
-        // TODO add requirement that any other exponent must have <=exponent_significant_bytes
-        assert(state.requirements != nullptr);
         if (std::holds_alternative<Pure>(*stack[0].sval) && std::holds_alternative<Pure>(*stack[1].sval))
             stack[1].sval = std::make_shared<SymbolicStackItem>(Pure {stack[1].val});
         else
         {
+            state.symbolic_value_matches_concrete(exponent);
             stack[1].sval = std::make_shared<SymbolicStackItem>(BinaryOp {BinOp::exp, stack[0].sval, stack[1].sval});
-            if (!std::holds_alternative<Pure>(*exponent.sval)) state.requirements->push_back(Equal{exponent.sval, exponent.val});
         }
     }
     return {EVMC_SUCCESS, gas_left};
@@ -582,6 +580,7 @@ template <bool isSymbolic>
 inline Result balance(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(x);
     const auto addr = intx::be::trunc<evmc::address>(x.val);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(addr) == EVMC_ACCESS_COLD)
@@ -611,10 +610,15 @@ inline void caller(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state
 template <bool isSymbolic> 
 inline void callvalue(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic)
+        // If scallvalue is unset, we are at message depth 0 and the callvalue is statically known 
+        // to be the one originating from the transaction, hence we push a pure value. 
+        // Otherwise, we are in a nested call where we set scallvalue to be a symbolic value, 
+        // in which case we should use that
         if (state.scallvalue) stack.push({intx::be::load<uint256>(state.msg->value), state.scallvalue});
         else stack.push(intx::be::load<uint256>(state.msg->value));
-    else stack.push(intx::be::load<uint256>(state.msg->value)); 
+    else 
+        stack.push(intx::be::load<uint256>(state.msg->value)); 
 }
 
 template <bool isSymbolic> 
@@ -654,6 +658,8 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(mem_index, input_index, size);
+
     if (!check_memory(gas_left, state.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
@@ -665,16 +671,6 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
 
     if (const auto cost = copy_cost(s); (gas_left -= cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
-
-    if constexpr (isSymbolic) {
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*mem_index.sval))
-            state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
-        if (!std::holds_alternative<Pure>(*input_index.sval))
-            state.requirements->push_back(Equal{input_index.sval, input_index.val});
-        if (!std::holds_alternative<Pure>(*size.sval))
-            state.requirements->push_back(Equal{size.sval, size.val});
-    }
 
     if (copy_size > 0)
     {
@@ -703,6 +699,8 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(mem_index, input_index, size);
+
     if (!check_memory(gas_left, state.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
@@ -714,15 +712,6 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
 
     if (const auto cost = copy_cost(s); (gas_left -= cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
-
-    if constexpr (isSymbolic) {
-        if (!std::holds_alternative<Pure>(*mem_index.sval))
-            state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
-        if (!std::holds_alternative<Pure>(*input_index.sval))
-            state.requirements->push_back(Equal{input_index.sval, input_index.val});
-        if (!std::holds_alternative<Pure>(*size.sval))
-            state.requirements->push_back(Equal{size.sval, size.val});
-    }
 
     // TODO: Add unit tests for each combination of conditions.
     if (copy_size > 0)
@@ -794,10 +783,14 @@ inline Result extcodesize(StackTop<isSymbolic> stack, int64_t gas_left, Executio
 template <bool isSymbolic> 
 inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
-    const auto addr = intx::be::trunc<evmc::address>(stack[0].val);
+
+    const auto& addr_index = stack[0];
+    const auto addr = intx::be::trunc<evmc::address>(addr_index.val);
     const auto& mem_index = stack[1];
     const auto& input_index = stack[2];
     const auto& size = stack[3];
+
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(addr_index, mem_index, input_index, size);
 
     if (!check_memory(gas_left, state.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -830,22 +823,14 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
             std::memset(&state.memory[dst + num_bytes_copied], 0, num_bytes_to_clear);
             if constexpr (isSymbolic) state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst + num_bytes_copied, num_bytes_to_clear, {}}, state.smemory);
         }
-        else {
+        else 
+        {
             if constexpr (isSymbolic) {
                 // the host call to `copy_code` succeeded, hence we need to make an immutable copy of the data and overlay it onto
                 // symbolic memory at the correct index
                 auto mem_copy = std::make_shared<uint8_t[]>(s);
                 std::memcpy(mem_copy.get(), &state.memory[dst], s);
                 state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, s, mem_copy}, state.smemory);
-                // because we are copying exact memory here, we require all the symbolic args
-                // to be exactly the same as the concrete values, otherwise we would get a different
-                // result from state.host.copy_code
-                if (!std::holds_alternative<Pure>(*stack[0].sval))
-                    state.requirements->push_back(Equal{stack[0].sval, stack[0].val});
-                if (!std::holds_alternative<Pure>(*input_index.sval))
-                    state.requirements->push_back(Equal{input_index.sval, input_index.val});
-                if (!std::holds_alternative<Pure>(*mem_index.sval))
-                    state.requirements->push_back(Equal{mem_index.sval, mem_index.val});
             }
         }
     }
@@ -887,6 +872,8 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(mem_index, input_index, size);
+
     if (!check_memory(gas_left, state.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
@@ -925,11 +912,10 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
             if constexpr (isSymbolic) {
-                assert(state.requirements != nullptr);
-                if (!std::holds_alternative<Pure>(*size.sval))
-                    state.requirements->push_back(Greater{size.sval, 0});
                 auto sreturn_data_offset = std::make_shared<SymbolicMemory>(Offset {input_index.sval, size.sval}, state.sreturn_data);
                 state.smemory = std::make_shared<SymbolicMemory>(SetMem {dst, s, sreturn_data_offset}, state.smemory);
+                // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
+                // EVMC_INVALID_MEMORY_ACCESS?
             }
         }
     }
@@ -940,6 +926,7 @@ template <bool isSymbolic>
 inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(x);
     const auto addr = intx::be::trunc<evmc::address>(x.val);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(addr) == EVMC_ACCESS_COLD)
@@ -948,9 +935,6 @@ inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, Executio
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if constexpr (isSymbolic) 
-        if (!std::holds_alternative<Pure>(*x.sval))
-            state.requirements->push_back(Equal{x.sval, x.val});
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
     if constexpr (isSymbolic) x.sval = std::make_shared<SymbolicStackItem>(Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
@@ -961,15 +945,14 @@ template <bool isSymbolic>
 inline void blockhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& number = stack[0];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(number);
 
     const auto upper_bound = state.get_tx_context().block_number;
     const auto lower_bound = std::max(upper_bound - 256, decltype(upper_bound){0});
     const auto n = static_cast<int64_t>(number.val);
     const auto header =
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
-    if constexpr (isSymbolic)
-        if (!std::holds_alternative<Pure>(*number.sval))
-            state.requirements->push_back(Equal{number.sval, number.val});
+
     number.val = intx::be::load<uint256>(header);
     if constexpr (isSymbolic) number.sval = std::make_shared<SymbolicStackItem>(Pure {number.val});
 }
@@ -1023,15 +1006,11 @@ template <bool isSymbolic>
 inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& index = stack[0];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(index);
 
     if (!check_memory(gas_left, state.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    if constexpr (isSymbolic) {
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*index.sval))
-            state.requirements->push_back(Equal{index.sval, index.val});
-    }
     index.val = intx::be::unsafe::load<uint256>(&state.memory[static_cast<size_t>(index.val)]);
     if constexpr (isSymbolic) index.sval = std::make_shared<SymbolicStackItem>(Mload {index.sval, state.smemory});
     return {EVMC_SUCCESS, gas_left};
@@ -1042,17 +1021,14 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
 {
     const auto& index = stack[0];
     const auto& value = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(index);
 
     if (!check_memory(gas_left, state.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
-    if constexpr (isSymbolic) {
+    if constexpr (isSymbolic)
         state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*index.sval))
-            state.requirements->push_back(Equal{index.sval, index.val});
-    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -1061,17 +1037,14 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
 {
     const auto& index = stack[0];
     const auto& value = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(index);
 
     if (!check_memory(gas_left, state.memory, index.val, 1))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
-    if constexpr (isSymbolic) {
+    if constexpr (isSymbolic) 
         state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetItem {index.sval, value.sval}, state.smemory});
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*index.sval))
-            state.requirements->push_back(Equal{index.sval, index.val});
-    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -1085,16 +1058,13 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
 template <bool isSymbolic> 
 inline code_iterator jump_impl(ExecutionState<isSymbolic>& state, const StackItem<isSymbolic>& dst) noexcept
 {
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(dst);
+
     const auto hi_part_is_nonzero = (dst.val[3] | dst.val[2] | dst.val[1]) != 0;
     if (hi_part_is_nonzero || !state.analysis.baseline->check_jumpdest(dst.val[0])) [[unlikely]]
     {
         state.status = EVMC_BAD_JUMP_DESTINATION;
         return nullptr;
-    }
-    if constexpr (isSymbolic) {
-        assert(state.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*dst.sval))
-            state.requirements->push_back(Equal{dst.sval, dst.val});
     }
     return &state.analysis.baseline->executable_code()[static_cast<size_t>(dst.val[0])];
 }
@@ -1188,9 +1158,7 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     auto& x = stack[0];
     const auto key = intx::be::store<evmc::bytes32>(x.val);
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
-    if constexpr (isSymbolic)
-        if (!std::holds_alternative<Pure>(*x.sval))
-            state.requirements->push_back(Equal{x.sval, x.val});
+
     x.val = intx::be::load<uint256>(value);
     if constexpr (isSymbolic) x.sval = std::make_shared<SymbolicStackItem>(Load<SymbolicStorage> {x.sval, state.ststore});
 }
@@ -1479,6 +1447,7 @@ inline Result datacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
     const auto& mem_index = stack[0];
     const auto& data_index = stack[1];
     const auto& size = stack[2];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(mem_index, size);
 
     if (!check_memory(gas_left, state.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -1511,6 +1480,7 @@ inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
 
     const auto& offset = stack[0];
     const auto& size = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(offset, size);
 
     if (!check_memory(gas_left, state.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -1526,6 +1496,7 @@ inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
     int topic_counter = 2;
     for (auto& topic : topics){
         topic = intx::be::store<evmc::bytes32>(stack[topic_counter].val);
+        if constexpr (isSymbolic) state.symbolic_value_matches_concrete(stack[topic_counter]);
         topic_counter++;
     }
         
@@ -1623,6 +1594,7 @@ inline TermResult return_impl(StackTop<isSymbolic> stack, int64_t gas_left, Exec
 {
     const auto& offset = stack[0];
     const auto& size = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(offset, size);
 
     if (!check_memory(gas_left, state.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -1641,6 +1613,7 @@ inline TermResult returncontract(
 {
     const auto& offset = stack[0];
     const auto& size = stack[1];
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(offset, size);
 
     if (!check_memory(gas_left, state.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -1665,7 +1638,9 @@ inline TermResult selfdestruct(StackTop<isSymbolic> stack, int64_t gas_left, Exe
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, gas_left};
 
-    const auto beneficiary = intx::be::trunc<evmc::address>(stack[0].val);
+    const auto& beneficiary_index = stack[0];
+    const auto beneficiary = intx::be::trunc<evmc::address>(beneficiary_index.val);
+    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(beneficiary_index);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(beneficiary) == EVMC_ACCESS_COLD)
     {
@@ -1692,7 +1667,6 @@ inline TermResult selfdestruct(StackTop<isSymbolic> stack, int64_t gas_left, Exe
         if (state.rev < EVMC_LONDON)
             state.gas_refund += 24000;
     }
-    // TODO any symbolic requirements??
     return {EVMC_SUCCESS, gas_left};
 }
 
