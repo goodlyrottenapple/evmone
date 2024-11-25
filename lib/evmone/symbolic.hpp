@@ -149,6 +149,45 @@ template <>
 struct StackItem<true> {
     uint256 val;
     std::shared_ptr<SymbolicStackItem> sval;
+
+    inline void set_symbolic(const Pure&& si)
+    {
+        sval = std::make_shared<SymbolicStackItem>(si);
+    }
+
+    inline void set_symbolic(const Sload&& si)
+    {
+        sval = std::make_shared<SymbolicStackItem>(si);
+    }
+
+    inline void set_symbolic(const Mload&& si)
+    {
+        sval = std::make_shared<SymbolicStackItem>(si);
+    }
+
+    inline void set_symbolic(const UnaryOp&& si)
+    {
+        if (std::holds_alternative<Pure>(*si.first))
+            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        else
+            sval = std::make_shared<SymbolicStackItem>(si);
+    }
+
+    inline void set_symbolic(const BinaryOp&& si)
+    {
+        if (std::holds_alternative<Pure>(*si.first) && std::holds_alternative<Pure>(*si.second))
+            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        else
+            sval = std::make_shared<SymbolicStackItem>(si);
+    }
+
+    inline void set_symbolic(const TernaryOp&& si)
+    {
+        if (std::holds_alternative<Pure>(*si.first) && std::holds_alternative<Pure>(*si.second) && std::holds_alternative<Pure>(*si.third))
+            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        else
+            sval = std::make_shared<SymbolicStackItem>(si);
+    }
 };
 
 struct Equal;

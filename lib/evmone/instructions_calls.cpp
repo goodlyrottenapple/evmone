@@ -386,7 +386,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if (result.status_code == EVMC_SUCCESS)
     {
         stack[0].val = intx::be::load<uint256>(result.create_address);
-        if constexpr (isSymbolic) stack[0].sval = std::make_shared<SymbolicStackItem>(Pure {stack[0].val});
+        if constexpr (isSymbolic) stack[0].set_symbolic(Pure {stack[0].val});
     }
 
     return {EVMC_SUCCESS, gas_left};
