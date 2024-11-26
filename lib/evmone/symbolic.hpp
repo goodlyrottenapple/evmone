@@ -276,10 +276,39 @@ struct SymbolicStackItem2 : RefCounted
 
     SymbolicStackItem2 (uint256 val), pure{val}, tag{SymbolicStackItemTag::pure} { }
     SymbolicStackItem2 (const rc_ptr<SymbolicStackItem2>& addr, SymbolicStorage2* symbolic_store) : sload{addr, symbolic_store}, tag{SymbolicStackItemTag::sload} { }
-    SymbolicStackItem2 (const rc_ptr<SymbolicStackItem2>&&addr, SymbolicMemory2* symbolic_memory) : mload{addr, symbolic_memory}, tag{SymbolicStackItemTag::mload} { }
+    SymbolicStackItem2 (const rc_ptr<SymbolicStackItem2>& addr, SymbolicMemory2* symbolic_memory) : mload{addr, symbolic_memory}, tag{SymbolicStackItemTag::mload} { }
     SymbolicStackItem2 (const UnOp& op, const rc_ptr<SymbolicStackItem2>& first) : unary{op, first}, tag{SymbolicStackItemTag::unaryOp} { }
     SymbolicStackItem2 (const BinOp& op, const rc_ptr<SymbolicStackItem2>& first, const rc_ptr<SymbolicStackItem2>& second), :binary{op, first, second}, tag{SymbolicStackItemTag::binaryOp} { }
     SymbolicStackItem2 (const TernOp& op, const rc_ptr<SymbolicStackItem2>& first, const rc_ptr<SymbolicStackItem2>& second, const rc_ptr<SymbolicStackItem2>& third) :ternary{op, first, second, third}, tag{SymbolicStackItemTag::ternaryOp} { }
+
+    ~SymbolicStackItem2() 
+    {
+        switch (tag)
+        {
+        case SymbolicStackItemTag::sload:
+            delete addr;
+            delete symbolic_store;
+            break;
+        case SymbolicStackItemTag::mload:
+            delete addr;
+            delete symbolic_memory;
+            break;
+        case SymbolicStackItemTag::unaryOp:
+            delete first;
+            break;
+        case SymbolicStackItemTag::binaryOp:
+            delete first;
+            delete second;
+            break;
+        case SymbolicStackItemTag::ternaryOp:
+            delete first;
+            delete second;
+            delete third;
+            break;
+        default:
+            break;
+        } 
+    }
 };
 
 
@@ -370,60 +399,60 @@ struct StackItem<true> {
     inline void set_symbolic(ArenaAllocator* arena, uint256 v)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        *ptr = SymbolicStackItem2(v);
+        ptr = new(ptr) SymbolicStackItem2(v);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, rc_ptr<SymbolicStackItem2>& addr, SymbolicStorage2* symbolic_store)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        *ptr = SymbolicStackItem2(addr, symbolic_store);
+        ptr = new(ptr) SymbolicStackItem2(addr, symbolic_store);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, rc_ptr<SymbolicStackItem2>& addr, SymbolicMemory2* symbolic_memory)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        *ptr = SymbolicStackItem2(addr, symbolic_memory);
+        ptr = new(ptr) SymbolicStackItem2(addr, symbolic_memory);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, uint256 addr_concrete, SymbolicMemory2* symbolic_memory)
     {
         auto *addr_ptr = arena->alloc<SymbolicStackItem2>();
-        *addr_ptr = SymbolicStackItem2(addr_concrete);
+        addr_ptr = new(addr_ptr) SymbolicStackItem2(addr_concrete);
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        *ptr = SymbolicStackItem2(rc_ptr(addr_ptr, arena), symbolic_memory);
+        ptr = new(ptr) SymbolicStackItem2(rc_ptr(addr_ptr, arena), symbolic_memory);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, const UnOp& op, rc_ptr<SymbolicStackItem2>& first)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        if (first.ref->tag == SymbolicStackItemTag::pure)
-            *ptr = SymbolicStackItem2(val);
+        if (first->tag == SymbolicStackItemTag::pure)
+            ptr = new(ptr) SymbolicStackItem2(val);
         else
-            *ptr = SymbolicStackItem2(op, first);
+            ptr = new(ptr) SymbolicStackItem2(op, first);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, const BinOp& op, rc_ptr<SymbolicStackItem2>& first, rc_ptr<SymbolicStackItem2>& second)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        if (first.ref->tag == SymbolicStackItemTag::pure && second.ref->tag == SymbolicStackItemTag::pure)
-            *ptr = SymbolicStackItem2(val);
+        if (first->tag == SymbolicStackItemTag::pure && second->tag == SymbolicStackItemTag::pure)
+            ptr = new(ptr) SymbolicStackItem2(val);
         else
-            *ptr = SymbolicStackItem2(op, first, second);
+            ptr = new(ptr) SymbolicStackItem2(op, first, second);
         sval = ptr;
     }
 
     inline void set_symbolic(ArenaAllocator* arena, const TernOp& op, rc_ptr<SymbolicStackItem2>& first, rc_ptr<SymbolicStackItem2>& second, rc_ptr<SymbolicStackItem2>& third)
     {
         auto *ptr = arena->alloc<SymbolicStackItem2>();
-        if (first.ref->tag == SymbolicStackItemTag::pure && second.ref->tag == SymbolicStackItemTag::pure && third.ref->tag == SymbolicStackItemTag::pure)
-            *ptr = SymbolicStackItem2(val);
+        if (first->tag == SymbolicStackItemTag::pure && second->tag == SymbolicStackItemTag::pure && third->tag == SymbolicStackItemTag::pure)
+            ptr = new(ptr) SymbolicStackItem2(val);
         else
-            *ptr = SymbolicStackItem2(op, first, second, third);
+            ptr = new(ptr) SymbolicStackItem2(op, first, second, third);
         sval = ptr;
     }
 };

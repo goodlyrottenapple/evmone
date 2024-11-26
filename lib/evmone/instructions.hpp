@@ -516,7 +516,7 @@ inline void callvalue(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& st
         // to be the one originating from the transaction, hence we push a pure value. 
         // Otherwise, we are in a nested call where we set scallvalue to be a symbolic value, 
         // in which case we should use that
-        if (state.scallvalue.has_value()) stack.push(StackItem<isSymbolic> {intx::be::load<uint256>(state.msg->value), state.scallvalue.value().copy()});
+        if (state.scallvalue.has_value()) stack.push(StackItem<isSymbolic> {intx::be::load<uint256>(state.msg->value), state.scallvalue.value()});
         else stack.push(intx::be::load<uint256>(state.msg->value));
     else 
         stack.push(intx::be::load<uint256>(state.msg->value)); 
@@ -579,7 +579,7 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         if constexpr (isSymbolic)
         {
             auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-            *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst, copy_size, state.scalldata), state.smemory);
+            ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst, copy_size, state.scalldata), state.smemory);
             state.smemory = ptr;
         }
     }        
@@ -590,7 +590,7 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         if constexpr (isSymbolic)
         {
             auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-            *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst + copy_size, s - copy_size), state.smemory);
+            ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst + copy_size, s - copy_size), state.smemory);
             state.smemory = ptr;
         }
     }
@@ -633,7 +633,7 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
             auto mem_copy = std::make_unique<uint8_t[]>(copy_size);
             std::memcpy(mem_copy.get(), &state.original_code[src], copy_size);
             auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-            *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst, copy_size, std::move(mem_copy)), state.smemory);
+            ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst, copy_size, std::move(mem_copy)), state.smemory);
             state.smemory = ptr;
         }
     }
@@ -643,7 +643,7 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
         if constexpr (isSymbolic) 
         {
             auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-            *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst + copy_size, s - copy_size), state.smemory);
+            ptr = new(ptr)SymbolicUpdates2(SymbolicMemoryUpdate2(dst + copy_size, s - copy_size), state.smemory);
             state.smemory = ptr;
         }
     }
@@ -742,7 +742,7 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
             if constexpr (isSymbolic)
             {
                 auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst + num_bytes_copied, num_bytes_to_clear), state.smemory);
+                ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst + num_bytes_copied, num_bytes_to_clear), state.smemory);
                 state.smemory = ptr;
             }
         }
@@ -754,7 +754,7 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
                 auto mem_copy = std::make_unique<uint8_t[]>(s);
                 std::memcpy(mem_copy.get(), &state.memory[dst], s);
                 auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst, s, std::move(mem_copy)), state.smemory);
+                ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst, s, std::move(mem_copy)), state.smemory);
                 state.smemory = ptr;
             }
         }
@@ -841,7 +841,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
                 auto *ptr_offset = stack.arena->template alloc<SymbolicMemory2>();
                 *ptr_offset = SymbolicUpdates2(SymbolicMemoryUpdate2(input_index.sval, size.sval, SymbolicMemoryUpdateTag::offset), state.sreturn_data);
                 auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(dst, s, ptr_offset), state.smemory);
+                ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(dst, s, ptr_offset), state.smemory);
                 state.smemory = ptr;
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
@@ -959,7 +959,7 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     if constexpr (isSymbolic)
     {
         auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-        *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.smemory);
+        ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.smemory);
         state.smemory = ptr;
     }
     return {EVMC_SUCCESS, gas_left};
@@ -979,7 +979,7 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     if constexpr (isSymbolic) 
     {
         auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
-        *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.smemory);
+        ptr = new(ptr) SymbolicUpdates2(SymbolicMemoryUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.smemory);
         state.smemory = ptr;
     }
     return {EVMC_SUCCESS, gas_left};
@@ -1112,7 +1112,7 @@ inline Result tstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     if constexpr (isSymbolic)
     {
         auto *ptr = stack.arena->template alloc<SymbolicStorage2>();
-        *ptr = SymbolicUpdates2(SymbolicStorageUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.ststore);
+        ptr = new(ptr) SymbolicUpdates2(SymbolicStorageUpdate2(index.sval, value.sval, SymbolicMemoryUpdateTag::update), state.ststore);
         state.ststore = ptr;
     }
     return {EVMC_SUCCESS, gas_left};
