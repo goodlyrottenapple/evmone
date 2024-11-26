@@ -95,7 +95,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         // if this check fails, we have reached the maximum stack depth of 1024, so this call will probably fail
         if (state.child != nullptr)
             state.child->scallvalue = 
-                (Op == OP_DELEGATECALL) ? state.scallvalue : (has_non_zero_value ? mvalue.value().sval : nullptr);
+                (Op == OP_DELEGATECALL) ? state.scallvalue.has_value() : (has_non_zero_value ? mvalue.value().sval : std::nullopt);
 
     if (input_size > 0)
     {
@@ -105,7 +105,11 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-                state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {input_offset_u256.sval, input_size_u256.sval}, state.smemory);
+            {
+                auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
+                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(input_offset_u256.sval, input_size_u256.sval, SymbolicMemoryUpdateTag::offset), state.smemory);
+                state.child->scalldata = ptr;
+            }
     }
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
@@ -147,9 +151,16 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     state.return_data.assign(result.output_data, result.output_size);
 
     if constexpr (isSymbolic)
-        state.sreturn_data = state.child && state.child->output_size != 0 ? 
-            std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {state.child->output_offset, state.child->output_size, state.child->smemory}, nullptr}) : nullptr;
+    {
+        if (state.child && state.child->output_size != 0)
+        {
+            auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
+            *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(state.child->output_offset, state.child->output_size, state.child->smemory));
+            state.sreturn_data = ptr;
 
+        }
+        else state.sreturn_data = nullptr;
+    }
     stack.top() = result.status_code == EVMC_SUCCESS;
 
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
@@ -157,7 +168,11 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
         if constexpr (isSymbolic)
             if (state.child != nullptr)
-                state.smemory = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {output_offset, copy_size, state.child->smemory}, state.smemory});
+            {
+                auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
+                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(output_offset, copy_size, state.child->smemory), state.smemory);
+                state.smemory = ptr;
+            }
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
@@ -357,8 +372,11 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         msg.input_size = init_code_size;
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-                state.child->scalldata = std::make_shared<SymbolicMemory>(Offset {init_code_offset_u256.sval, init_code_size_u256.sval}, state.smemory);
-
+            {
+                auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
+                *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(init_code_offset_u256.sval, init_code_size_u256.sval, SymbolicMemoryUpdateTag::offset), state.smemory);
+                state.child->scalldata = ptr;
+            }
         if (state.rev >= EVMC_PRAGUE)
         {
             // EOF initcode is not allowed for legacy creation
@@ -380,13 +398,16 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if constexpr (isSymbolic) {
         auto mem_copy = std::make_unique<uint8_t[]>(result.output_size);
         std::memcpy(mem_copy.get(), result.output_data, result.output_size);
-        state.sreturn_data = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, result.output_size, std::move(mem_copy)}, nullptr});
+
+        auto *ptr = stack.arena->template alloc<SymbolicMemory2>();
+        *ptr = SymbolicUpdates2(SymbolicMemoryUpdate2(0, result.output_size, std::move(mem_copy)));
+        state.sreturn_data = ptr;
     }
 
     if (result.status_code == EVMC_SUCCESS)
     {
         stack[0].val = intx::be::load<uint256>(result.create_address);
-        if constexpr (isSymbolic) stack[0].set_symbolic(Pure {stack[0].val});
+        if constexpr (isSymbolic) stack[0].set_symbolic(stack.arena, stack[0].val);
     }
 
     return {EVMC_SUCCESS, gas_left};

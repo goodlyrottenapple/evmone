@@ -177,13 +177,12 @@ public:
     ExecutionState<isSymbolic>* child = nullptr;
     std::shared_ptr<std::vector<SymbolicRequirement>> requirements = nullptr;
     std::shared_ptr<SymbolicStorageMap> modified_sstores = nullptr;
-    std::shared_ptr<SymbolicStorage> sstore = nullptr;
-    std::shared_ptr<SymbolicStorage> ststore = nullptr;
-    std::shared_ptr<SymbolicMemory> smemory = nullptr;
-    std::shared_ptr<SymbolicStackItem> scaller = nullptr;
-    std::shared_ptr<SymbolicStackItem> scallvalue = nullptr;
-    std::shared_ptr<SymbolicMemory> scalldata = nullptr;
-    std::shared_ptr<SymbolicMemory> sreturn_data = nullptr;
+    SymbolicStorage2* sstore = nullptr;
+    SymbolicStorage2* ststore = nullptr;
+    SymbolicMemory2* smemory = nullptr;
+    std::optional<rc_ptr<SymbolicStackItem2>> scallvalue = std::nullopt;
+    SymbolicMemory2* scalldata = nullptr;
+    SymbolicMemory2* sreturn_data = nullptr;
 private:
     evmc_tx_context m_tx = {};
 
@@ -241,6 +240,7 @@ public:
             if(!modified_sstores) modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
             modified_sstores->clear();
             sstore = nullptr;
+            scallvalue = std::nullopt;
         }
     }
     
@@ -251,7 +251,7 @@ public:
         else
             assert (requirements != nullptr);
 
-        if (!std::holds_alternative<Pure>(*i.sval))
+        if (i.sval->tag != SymbolicStackItemTag::pure)
             requirements->push_back(Equal{i.sval, i.val});
     }
 

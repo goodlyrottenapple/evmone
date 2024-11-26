@@ -334,8 +334,12 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         {
             state.sstore = search->second;
         }
-        else 
-            state.sstore = std::make_shared<SymbolicStorage>(msg.recipient, nullptr);
+        else
+        {
+            auto *ptr = stack.arena->template alloc<SymbolicStorage2>();
+            *ptr = SymbolicUpdates2(msg.recipient);
+            state.sstore = ptr;
+        }
     }
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
