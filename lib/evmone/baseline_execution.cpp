@@ -311,11 +311,11 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // only reset the symbolic state if this is a 0 depth call.
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
     if constexpr (isSymbolic){
-        if(msg.depth == 0) state.reset_symbolic();
+        if(msg.depth == 0) state.symbolic.reset_all();
         else
         {
-            if(!state.modified_sstores) state.modified_sstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
-            if(!state.requirements) state.requirements = std::make_shared<std::vector<SymbolicRequirement>>();
+            if(!state.symbolic.modified_stores) state.symbolic.modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+            if(!state.symbolic.requirements) state.symbolic.requirements = std::make_shared<std::vector<SymbolicRequirement>>();
         }
 
         if (msg.depth < 1024)
@@ -323,19 +323,19 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
             state.child = &state_child;
             assert(state.child != nullptr);
-            assert(state.modified_sstores != nullptr);
-            state.child->modified_sstores = state.modified_sstores;
-            assert(state.requirements != nullptr);
-            state.child->requirements = state.requirements;
+            assert(state.symbolic.modified_stores != nullptr);
+            state.child->symbolic.modified_stores = state.symbolic.modified_stores;
+            assert(state.symbolic.requirements != nullptr);
+            state.child->symbolic.requirements = state.symbolic.requirements;
         }
         // set up the symbolic store by looking up any previous symbolic state at the recipient address,
         // in case we are in a nested context
-        if (auto search = state.modified_sstores->find(msg.recipient); search != state.modified_sstores->end())
+        if (auto search = state.symbolic.modified_stores->find(msg.recipient); search != state.symbolic.modified_stores->end())
         {
-            state.sstore = search->second;
+            state.symbolic.store = search->second;
         }
         else 
-            state.sstore = std::make_shared<SymbolicStorage>(msg.recipient, nullptr);
+            state.symbolic.store = std::make_shared<SymbolicStorage>(msg.recipient, nullptr);
     }
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
@@ -377,17 +377,17 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // in case we are in a nested context which will call into the same contract and make further
     // modifications to its state
     if constexpr (isSymbolic) {
-        (*state.modified_sstores)[msg.recipient] = state.sstore;
+        (*state.symbolic.modified_stores)[msg.recipient] = state.symbolic.store;
 
         // if (msg.depth == 0)
         // {  
-        //     std::cout << "symbolic store:\n" << state.sstore;
+        //     std::cout << "symbolic store:\n" << state.symbolic.sstore;
 
-        //     std::cout << "\nsymbolic memory:\n" << state.smemory;
+        //     std::cout << "\nsymbolic memory:\n" << state.symbolic.smemory;
 
         //     std::cout << "\nrequirements:\n";
-        //     assert(state.requirements != nullptr);
-        //     for (auto& r : *state.requirements)
+        //     assert(state.symbolic.requirements != nullptr);
+        //     for (auto& r : *state.symbolic.requirements)
         //     {
         //         std::cout << r << "\n";
         //     }

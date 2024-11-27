@@ -97,7 +97,7 @@ template <bool isSymbolic>
 Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
-    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(x);
+    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(x);
     const auto key = intx::be::store<evmc::bytes32>(x.val);
 
     if (state.rev >= EVMC_BERLIN &&
@@ -112,7 +112,7 @@ Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymb
     }
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
-    if constexpr (isSymbolic) x.set_symbolic(Sload {x.sval, state.sstore});
+    if constexpr (isSymbolic) x.set_symbolic(Sload {x.sval, state.symbolic.store});
 
     return {EVMC_SUCCESS, gas_left};
 }
@@ -128,7 +128,7 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
 
     const auto& key_index = stack[0];
     const auto& val_index = stack[1];
-    if constexpr (isSymbolic) state.symbolic_value_matches_concrete(key_index);
+    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(key_index);
 
     if (state.rev >= EVMC_ISTANBUL && gas_left <= 2300)
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -150,7 +150,7 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
     state.gas_refund += gas_refund;
 
     if constexpr (isSymbolic)
-        state.sstore = std::make_shared<SymbolicStorage>(SymbolicStorage {SetItem {key_index.sval, val_index.sval}, state.sstore});
+        state.symbolic.update_store(key_index.sval, val_index.sval);
     
     return {EVMC_SUCCESS, gas_left};
 }
