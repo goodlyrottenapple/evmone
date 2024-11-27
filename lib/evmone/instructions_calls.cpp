@@ -95,7 +95,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         // if this check fails, we have reached the maximum stack depth of 1024, so this call will probably fail
         if (state.child != nullptr)
             state.child->symbolic.callvalue = 
-                (Op == OP_DELEGATECALL) ? state.symbolic.callvalue : (has_non_zero_value ? mvalue.value().sval : nullptr);
+                (Op == OP_DELEGATECALL) ? state.symbolic.callvalue : (has_non_zero_value ? mvalue.value().sval : SymbolicStackItemPtr());
 
     if (input_size > 0)
     {
@@ -386,7 +386,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if (result.status_code == EVMC_SUCCESS)
     {
         stack[0].val = intx::be::load<uint256>(result.create_address);
-        if constexpr (isSymbolic) stack[0].set_symbolic(Pure {stack[0].val});
+        if constexpr (isSymbolic) stack[0].set_symbolic(*stack.arena, Pure {stack[0].val});
     }
 
     return {EVMC_SUCCESS, gas_left};

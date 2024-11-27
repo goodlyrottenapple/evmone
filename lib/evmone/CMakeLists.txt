@@ -11,6 +11,7 @@ add_library(evmone
     advanced_execution.cpp
     advanced_execution.hpp
     advanced_instructions.cpp
+    allocator.hpp
     baseline.hpp
     baseline_analysis.cpp
     baseline_execution.cpp
@@ -25,6 +26,7 @@ add_library(evmone
     instructions_storage.cpp
     instructions_traits.hpp
     instructions_xmacro.hpp
+    rc_ptr.hpp
     symbolic.cpp
     symbolic.hpp
     tracing.cpp

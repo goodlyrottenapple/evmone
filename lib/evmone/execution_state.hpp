@@ -161,8 +161,8 @@ public:
     SymbolicStoragePtr store = nullptr;
     SymbolicMemoryPtr memory = nullptr;
     SymbolicStoragePtr tstore = nullptr;
-    SymbolicStackItemPtr caller = nullptr;
-    SymbolicStackItemPtr callvalue = nullptr;
+    SymbolicStackItemPtr caller;
+    SymbolicStackItemPtr callvalue;
     SymbolicMemoryPtr calldata = nullptr;
     SymbolicMemoryPtr returndata = nullptr;
 
@@ -229,9 +229,9 @@ public:
     }
 
     // equivalent to std::memcpy(&state.memory[dst], &m[src], size);
-    inline void update_memory(size_t dst, SymbolicStackItemPtr src, size_t size, SymbolicMemoryPtr m)
+    inline void update_memory(ArenaAllocator& arena, size_t dst, SymbolicStackItemPtr src, size_t size, SymbolicMemoryPtr m)
     {
-        auto ssize = std::make_shared<SymbolicStackItem>(Pure {size});
+        auto ssize = StackItem<true>::make_symbolic(arena, Pure {size});
         auto soffset = std::make_shared<SymbolicMemory>(Offset {src, ssize}, m);
         memory = std::make_shared<SymbolicMemory>(SetMem{dst, size, soffset}, memory);
     }

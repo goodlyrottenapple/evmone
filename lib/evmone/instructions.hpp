@@ -24,7 +24,8 @@ class StackTop
     StackItem<isSymbolic>* m_top;
 
 public:
-    StackTop(StackItem<isSymbolic>* top) noexcept : m_top{top} {}
+    ArenaAllocator* arena;
+    StackTop(StackItem<isSymbolic>* top) noexcept : m_top{top}, arena{nullptr} {}
 
     /// Returns the reference to the stack item by index, where 0 means the top item
     /// and positive index values the items further down the stack.
@@ -45,7 +46,7 @@ public:
         ++m_top;
         std::memset((void*)m_top, 0, sizeof(StackItem<isSymbolic>));
         if constexpr (isSymbolic)
-            *m_top = {value, StackItem<true>::make_symbolic(Pure {value})};
+            *m_top = {value, StackItem<true>::make_symbolic(*arena, Pure {value})};
         else 
             *m_top = {value};
     }
@@ -175,7 +176,7 @@ inline void add(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val + stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::add, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::add, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -183,7 +184,7 @@ inline void mul(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val * stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::mul, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::mul, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -191,7 +192,7 @@ inline void sub(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val - stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::sub, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::sub, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -200,7 +201,7 @@ inline void div(StackTop<isSymbolic> stack) noexcept
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val / v.val : 0;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -209,7 +210,7 @@ inline void sdiv(StackTop<isSymbolic> stack) noexcept
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).quot : 0;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::div, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -218,7 +219,7 @@ inline void mod(StackTop<isSymbolic> stack) noexcept
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val % v.val : 0;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::mod, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::mod, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -227,7 +228,7 @@ inline void smod(StackTop<isSymbolic> stack) noexcept
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).rem : 0;
     if constexpr (isSymbolic) 
-        stack[1].set_symbolic(BinaryOp {BinOp::smod, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::smod, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -238,7 +239,7 @@ inline void addmod(StackTop<isSymbolic> stack) noexcept
     auto& m = stack[2];
     m.val = m.val != 0 ? intx::addmod(x.val, y.val, m.val) : 0;
     if constexpr (isSymbolic)
-        stack[2].set_symbolic(TernaryOp {TernOp::addmod, stack[0].sval, stack[1].sval, stack[2].sval});
+        stack[2].set_symbolic(*stack.arena, TernaryOp {TernOp::addmod, stack[0].sval, stack[1].sval, stack[2].sval});
 }
 
 template <bool isSymbolic> 
@@ -249,7 +250,7 @@ inline void mulmod(StackTop<isSymbolic> stack) noexcept
     auto& m = stack[2];
     m.val = m.val != 0 ? intx::mulmod(x.val, y.val, m.val) : 0;
     if constexpr (isSymbolic)
-        stack[2].set_symbolic(TernaryOp {TernOp::mulmod, stack[0].sval, stack[1].sval, stack[2].sval});
+        stack[2].set_symbolic(*stack.arena, TernaryOp {TernOp::mulmod, stack[0].sval, stack[1].sval, stack[2].sval});
 }
 
 template <bool isSymbolic> 
@@ -269,7 +270,7 @@ inline Result exp(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
     if constexpr (isSymbolic) 
     {
         state.symbolic.symbolic_value_matches_concrete(exponent);
-        stack[1].set_symbolic(BinaryOp {BinOp::exp, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::exp, stack[0].sval, stack[1].sval});
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -308,7 +309,7 @@ inline void signextend(StackTop<isSymbolic> stack) noexcept
     }
 
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::signextend, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::signextend, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -316,7 +317,7 @@ inline void lt(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val < stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::lt, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::lt, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -324,7 +325,7 @@ inline void gt(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[1].val < stack[0].val; // Arguments are swapped and < is used.
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::gt, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::gt, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -332,7 +333,7 @@ inline void slt(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = slt(stack[0].val, stack[1].val);
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::slt, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::slt, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -340,7 +341,7 @@ inline void sgt(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = slt(stack[1].val, stack[0].val);  // Arguments are swapped and SLT is used.
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::sgt, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::sgt, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -348,7 +349,7 @@ inline void eq(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val == stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::eq, stack[0].sval, stack[1].sval});
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::eq, stack[0].sval, stack[1].sval});
 }
 
 template <bool isSymbolic> 
@@ -356,7 +357,7 @@ inline void iszero(StackTop<isSymbolic> stack) noexcept
 {
     stack[0].val = stack[0].val == 0;
     if constexpr (isSymbolic) 
-        stack[0].set_symbolic(UnaryOp {UnOp::iszero, stack[0].sval}); 
+        stack[0].set_symbolic(*stack.arena, UnaryOp {UnOp::iszero, stack[0].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -364,7 +365,7 @@ inline void and_(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val & stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::and_, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::and_, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -372,7 +373,7 @@ inline void or_(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val | stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::or_, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::or_, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -380,7 +381,7 @@ inline void xor_(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val = stack[0].val ^ stack[1].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::xor_, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::xor_, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -388,7 +389,7 @@ inline void not_(StackTop<isSymbolic> stack) noexcept
 {
     stack[0].val = ~ stack[0].val;
     if constexpr (isSymbolic)
-        stack[0].set_symbolic(UnaryOp {UnOp::not_, stack[0].sval}); 
+        stack[0].set_symbolic(*stack.arena, UnaryOp {UnOp::not_, stack[0].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -406,7 +407,7 @@ inline void byte(StackTop<isSymbolic> stack) noexcept
     const auto byte = (word >> (byte_index * 8)) & byte_mask;
     x.val = byte;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::byte, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::byte, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -414,7 +415,7 @@ inline void shl(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val <<= stack[0].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::shl, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::shl, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -422,7 +423,7 @@ inline void shr(StackTop<isSymbolic> stack) noexcept
 {
     stack[1].val >>= stack[0].val;
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::shr, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::shr, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -438,7 +439,7 @@ inline void sar(StackTop<isSymbolic> stack) noexcept
     x.val = (x.val >> y.val) | (sign_mask << mask_shift);
 
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::sar, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::sar, stack[0].sval, stack[1].sval}); 
 }
 
 template <bool isSymbolic> 
@@ -461,7 +462,7 @@ inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionS
     size.val = intx::be::load<uint256>(ethash::keccak256(data, s));
 
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(BinaryOp {BinOp::keccak256, stack[0].sval, stack[1].sval}); 
+        stack[1].set_symbolic(*stack.arena, BinaryOp {BinOp::keccak256, stack[0].sval, stack[1].sval}); 
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -487,7 +488,7 @@ inline Result balance(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
 
     x.val = intx::be::load<uint256>(state.host.get_balance(addr));
     // TODO do we need some constraint on gas here? probably not...
-    if constexpr (isSymbolic) x.set_symbolic(Pure {x.val});
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -524,7 +525,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
     if (state.msg->input_size < index.val) {
         index.val = 0;
-        if constexpr (isSymbolic) index.set_symbolic(Pure {index.val});
+        if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
     }
     else
     {
@@ -537,7 +538,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
-        if constexpr (isSymbolic) index.set_symbolic(Load {StackItem<true>::make_symbolic(Pure {index.val}), state.symbolic.calldata});
+        if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Load {StackItem<true>::make_symbolic(*stack.arena, Pure {index.val}), state.symbolic.calldata});
     }
 }
 
@@ -647,7 +648,7 @@ inline void blobhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
     index.val = (index.val < tx.blob_hashes_count) ?
                 intx::be::load<uint256>(tx.blob_hashes[static_cast<size_t>(index.val)]) :
                 0;
-    if constexpr (isSymbolic) index.set_symbolic(Pure {index.val});
+    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
 }
 
 template <bool isSymbolic> 
@@ -669,7 +670,7 @@ inline Result extcodesize(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = state.host.get_code_size(addr);
-    if constexpr (isSymbolic) x.set_symbolic(Pure {x.val});
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -746,7 +747,7 @@ inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
 
         index.val = intx::be::unsafe::load<uint256>(data);
     }
-    if constexpr (isSymbolic) index.set_symbolic(Pure {index.val});
+    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
 }
 
 template <bool isSymbolic> 
@@ -802,7 +803,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
             if constexpr (isSymbolic) {
-                state.symbolic.update_memory(dst, input_index.sval, s, state.symbolic.returndata);
+                state.symbolic.update_memory(*stack.arena, dst, input_index.sval, s, state.symbolic.returndata);
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
             }
@@ -825,7 +826,7 @@ inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
-    if constexpr (isSymbolic) x.set_symbolic(Pure {x.val});
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -843,7 +844,7 @@ inline void blockhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& st
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
 
     number.val = intx::be::load<uint256>(header);
-    if constexpr (isSymbolic) number.set_symbolic(Pure {number.val});
+    if constexpr (isSymbolic) number.set_symbolic(*stack.arena, Pure {number.val});
 }
 
 template <bool isSymbolic> 
@@ -901,7 +902,7 @@ inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
         return {EVMC_OUT_OF_GAS, gas_left};
 
     index.val = intx::be::unsafe::load<uint256>(&state.memory[static_cast<size_t>(index.val)]);
-    if constexpr (isSymbolic) index.set_symbolic(Mload {index.sval, state.symbolic.memory});
+    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Mload {index.sval, state.symbolic.memory});
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -1049,7 +1050,7 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
 
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic) x.set_symbolic(Load<SymbolicStoragePtr> {x.sval, state.symbolic.tstore});
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Load<SymbolicStoragePtr> {x.sval, state.symbolic.tstore});
 }
 
 template <bool isSymbolic> 
@@ -1133,7 +1134,7 @@ inline code_iterator push(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>
         r.val[num_full_words - 1 - i] = intx::be::unsafe::load<uint64_t>(data);
         data += sizeof(uint64_t);
     }
-    if constexpr (isSymbolic) r.set_symbolic(Pure {r.val});
+    if constexpr (isSymbolic) r.set_symbolic(*stack.arena, Pure {r.val});
 
     return pos + (Len + 1);
 }
@@ -1310,7 +1311,7 @@ inline void dataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
 
         index.val = intx::be::unsafe::load<uint256>(d);
     }
-    if constexpr (isSymbolic) index.set_symbolic(Pure {index.val});
+    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
 }
 
 template <bool isSymbolic> 

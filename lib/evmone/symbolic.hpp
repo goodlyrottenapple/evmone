@@ -1,6 +1,7 @@
 #pragma once
 
 #include "baseline.hpp"
+#include "rc_ptr.hpp"
 #include <intx/intx.hpp>
 #include <map>
 #include <variant>
@@ -66,7 +67,7 @@ using Mload = Load<SymbolicMemoryPtr>;
 
 using SymbolicStackItem =
         std::variant<Pure, Sload, Mload, UnaryOp, BinaryOp, TernaryOp>;
-using SymbolicStackItemPtr = std::shared_ptr<SymbolicStackItem>;
+using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
 
@@ -160,9 +161,9 @@ struct StackItem<true> {
     // Not sure where to stick these static methods. 
     // Ideally they would go into the SymbolicStackItem namespace, but not sure how to do that...
 
-    template <typename ...Args> inline static SymbolicStackItemPtr make_symbolic(Args&& ...args)
+    template <typename ...Args> inline static SymbolicStackItemPtr make_symbolic(ArenaAllocator& arena, Args&& ...args)
     {
-        return std::make_shared<SymbolicStackItem>(std::forward<Args>(args)...);
+        return rc_ptr<SymbolicStackItem>::make(arena, std::forward<Args>(args)...);
     }
 
     inline static bool is_symbolic(const SymbolicStackItemPtr& sval)
@@ -175,43 +176,43 @@ struct StackItem<true> {
         return std::holds_alternative<Pure>(*sval);
     }
 
-    inline void set_symbolic(Pure&& si)
+    inline void set_symbolic(ArenaAllocator& arena, Pure&& si)
     {
-        sval = make_symbolic(std::forward<Pure>(si));
+        sval = make_symbolic(arena, std::forward<Pure>(si));
     }
 
-    inline void set_symbolic(Sload&& si)
+    inline void set_symbolic(ArenaAllocator& arena, Sload&& si)
     {
-        sval = make_symbolic(si);
+        sval = make_symbolic(arena, si);
     }
 
-    inline void set_symbolic(Mload&& si)
+    inline void set_symbolic(ArenaAllocator& arena, Mload&& si)
     {
-        sval = make_symbolic(si);
+        sval = make_symbolic(arena, si);
     }
 
-    inline void set_symbolic(UnaryOp&& si)
+    inline void set_symbolic(ArenaAllocator& arena, UnaryOp&& si)
     {
         if (is_pure(si.first))
-            sval = make_symbolic(Pure {val});
+            sval = make_symbolic(arena, Pure {val});
         else
-            sval = make_symbolic(si);
+            sval = make_symbolic(arena, si);
     }
 
-    inline void set_symbolic(BinaryOp&& si)
+    inline void set_symbolic(ArenaAllocator& arena, BinaryOp&& si)
     {
         if (is_pure(si.first) && std::holds_alternative<Pure>(*si.second))
-            sval = make_symbolic(Pure {val});
+            sval = make_symbolic(arena, Pure {val});
         else
-            sval = make_symbolic(si);
+            sval = make_symbolic(arena, si);
     }
 
-    inline void set_symbolic(TernaryOp&& si)
+    inline void set_symbolic(ArenaAllocator& arena, TernaryOp&& si)
     {
         if (is_pure(si.first) && is_pure(si.second) && is_pure(si.third))
-            sval = make_symbolic(Pure {val});
+            sval = make_symbolic(arena, Pure {val});
         else
-            sval = make_symbolic(si);
+            sval = make_symbolic(arena, si);
     }
 };
 
