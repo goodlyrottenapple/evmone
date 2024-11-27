@@ -152,33 +152,19 @@ template <bool isSymbolic>
 class SymbolicState
 {
 public:
-    std::shared_ptr<std::vector<SymbolicRequirement>> requirements = nullptr;
-    std::shared_ptr<SymbolicStorageMap> modified_stores = nullptr;
-    std::shared_ptr<SymbolicStorage> store = nullptr;
-    std::shared_ptr<SymbolicMemory> memory = nullptr;
-    std::shared_ptr<SymbolicStorage> tstore = nullptr;
-    std::shared_ptr<SymbolicStackItem> caller = nullptr;
-    std::shared_ptr<SymbolicStackItem> callvalue = nullptr;
-    std::shared_ptr<SymbolicMemory> calldata = nullptr;
-    std::shared_ptr<SymbolicMemory> returndata = nullptr;
-    void reset() noexcept
-    {
-        if constexpr (isSymbolic) {
-            memory = nullptr;
-            tstore = nullptr;
-        }
-    }
+    using SymbolicRequirements = std::vector<SymbolicRequirement>;
+    using SymbolicRequirementsPtr = std::shared_ptr<SymbolicRequirements>;
+    using SymbolicStorageMapPtr = std::shared_ptr<SymbolicStorageMap>;
 
-    void reset_all() noexcept
-    {
-        if constexpr (isSymbolic) {
-            if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
-            requirements->clear();
-            if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
-            modified_stores->clear();
-            store = nullptr;
-        }
-    }
+    SymbolicRequirementsPtr requirements = nullptr;
+    SymbolicStorageMapPtr modified_stores = nullptr;
+    SymbolicStoragePtr store = nullptr;
+    SymbolicMemoryPtr memory = nullptr;
+    SymbolicStoragePtr tstore = nullptr;
+    SymbolicStackItemPtr caller = nullptr;
+    SymbolicStackItemPtr callvalue = nullptr;
+    SymbolicMemoryPtr calldata = nullptr;
+    SymbolicMemoryPtr returndata = nullptr;
 
     void symbolic_value_matches_concrete(const StackItem<isSymbolic>& i, std::convertible_to<const StackItem<isSymbolic>&> auto... is)
     {
@@ -191,7 +177,19 @@ public:
             requirements->push_back(Equal{i.sval, i.val});
     }
 
-    inline void set_calldata(std::shared_ptr<SymbolicStackItem> offset, std::shared_ptr<SymbolicStackItem> size)
+    inline void set_requirements(bool reset)
+    {
+        if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
+        if(reset) requirements->clear();
+    }
+
+    inline void set_modified_stores(bool reset)
+    {
+        if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+        if(reset) modified_stores->clear();
+    }
+
+    inline void set_calldata(SymbolicStackItemPtr offset, SymbolicStackItemPtr size)
     {
         calldata = std::make_shared<SymbolicMemory>(Offset {offset, size}, memory);
     }
@@ -200,7 +198,7 @@ public:
         returndata = nullptr;
     }
 
-    inline void set_returndata(size_t offset, size_t size, std::shared_ptr<SymbolicMemory> m)
+    inline void set_returndata(size_t offset, size_t size, SymbolicMemoryPtr m)
     {
         returndata = std::make_shared<SymbolicMemory>(SetMem {offset, size, m}, nullptr);
     }
@@ -212,7 +210,7 @@ public:
         returndata = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, s, std::move(mem_copy)}, nullptr});
     }
 
-    inline void update_memory(size_t index, size_t size, std::shared_ptr<SymbolicMemory> m)
+    inline void update_memory(size_t index, size_t size, SymbolicMemoryPtr m)
     {
         memory = std::make_shared<SymbolicMemory>(SetMem{index, size, m}, memory);
     }
@@ -231,24 +229,46 @@ public:
     }
 
     // equivalent to std::memcpy(&state.memory[dst], &m[src], size);
-    inline void update_memory(size_t dst, std::shared_ptr<SymbolicStackItem> src, size_t size, std::shared_ptr<SymbolicMemory> m)
+    inline void update_memory(size_t dst, SymbolicStackItemPtr src, size_t size, SymbolicMemoryPtr m)
     {
         auto ssize = std::make_shared<SymbolicStackItem>(Pure {size});
         auto soffset = std::make_shared<SymbolicMemory>(Offset {src, ssize}, m);
         memory = std::make_shared<SymbolicMemory>(SetMem{dst, size, soffset}, memory);
     }
 
-    inline void update_memory(std::shared_ptr<SymbolicStackItem> k, std::shared_ptr<SymbolicStackItem> v)
+    inline void update_memory(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
         memory = std::make_shared<SymbolicMemory>(SetItem{k,v}, memory);
     }
 
-    inline void update_tstore(std::shared_ptr<SymbolicStackItem> k, std::shared_ptr<SymbolicStackItem> v)
+    inline void reset_memory() noexcept
+    {
+        memory = nullptr;
+    }
+
+    inline void update_tstore(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
         tstore = std::make_shared<SymbolicStorage>(SetItem{k,v}, tstore);
     }
 
-    inline void update_store(std::shared_ptr<SymbolicStackItem> k, std::shared_ptr<SymbolicStackItem> v)
+    inline void reset_tstore() noexcept
+    {
+        tstore = nullptr;
+    }
+
+    // set up the symbolic store by looking up any previous symbolic state at the recipient address,
+    // in case we are in a nested context
+    inline void set_store(evmc_address init)
+    {
+        if (auto search = modified_stores->find(init); search != modified_stores->end())
+        {
+            store = search->second;
+        }
+        else 
+            store = std::make_shared<SymbolicStorage>(init, nullptr);
+    }
+
+    inline void update_store(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
         store = std::make_shared<SymbolicStorage>(SetItem{k,v}, store);
     }
@@ -327,7 +347,6 @@ public:
         deploy_container = {};
         m_tx = {};
         call_stack = {};
-        symbolic.reset();
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }

@@ -45,7 +45,7 @@ public:
         ++m_top;
         std::memset((void*)m_top, 0, sizeof(StackItem<isSymbolic>));
         if constexpr (isSymbolic)
-            *m_top = {value, std::make_shared<SymbolicStackItem>(Pure {value})};
+            *m_top = {value, StackItem<true>::make_symbolic(Pure {value})};
         else 
             *m_top = {value};
     }
@@ -537,7 +537,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
-        if constexpr (isSymbolic) index.set_symbolic(Load {std::make_shared<SymbolicStackItem>(Pure {index.val}), state.symbolic.calldata});
+        if constexpr (isSymbolic) index.set_symbolic(Load {StackItem<true>::make_symbolic(Pure {index.val}), state.symbolic.calldata});
     }
 }
 
@@ -721,7 +721,6 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
             if constexpr (isSymbolic)
                 // the host call to `copy_code` succeeded, hence we need to make an immutable copy of the data and overlay it onto
                 // symbolic memory at the correct index
-                
                 state.symbolic.update_memory(dst, s, &state.memory[dst]);
         }
     }
@@ -1050,7 +1049,7 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
 
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic) x.set_symbolic(Load<SymbolicStorage> {x.sval, state.symbolic.tstore});
+    if constexpr (isSymbolic) x.set_symbolic(Load<SymbolicStoragePtr> {x.sval, state.symbolic.tstore});
 }
 
 template <bool isSymbolic> 

@@ -25,6 +25,9 @@ struct TernaryOp;
 template<typename>
 struct SymbolicUpdates;
 
+template <class T>
+using SymbolicUpdatesPtr = std::shared_ptr<SymbolicUpdates<T>>;
+
 struct SetItem;
 struct Offset;
 struct SetMem;
@@ -37,6 +40,7 @@ std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
 
 
 using SymbolicStorage = SymbolicUpdates<SetItem>;
+using SymbolicStoragePtr = SymbolicUpdatesPtr<SetItem>;
 
 
 struct MapComparator
@@ -51,22 +55,25 @@ struct MapComparator
     }
 };
 
-using SymbolicStorageMap = std::map<evmc_address, std::shared_ptr<SymbolicStorage>, MapComparator>;
+using SymbolicStorageMap = std::map<evmc_address, SymbolicStoragePtr, MapComparator>;
 
 using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
+using SymbolicMemoryPtr = SymbolicUpdatesPtr<SymbolicMemoryUpdate>;
+using PlainMemoryPtr = std::shared_ptr<uint8_t[]>;
 
-using Sload = Load<SymbolicStorage>;
-using Mload = Load<SymbolicMemory>;
+using Sload = Load<SymbolicStoragePtr>;
+using Mload = Load<SymbolicMemoryPtr>;
 
 using SymbolicStackItem =
         std::variant<Pure, Sload, Mload, UnaryOp, BinaryOp, TernaryOp>;
+using SymbolicStackItemPtr = std::shared_ptr<SymbolicStackItem>;
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
 
 
 struct Offset {
-    std::shared_ptr<SymbolicStackItem> offset;
-    std::shared_ptr<SymbolicStackItem> size;
+    SymbolicStackItemPtr offset;
+    SymbolicStackItemPtr size;
     friend std::ostream& operator<<(std::ostream&, const Offset&);
 };
 
@@ -74,14 +81,14 @@ struct SetMem
 {
     size_t index;
     size_t size;
-    std::variant<std::shared_ptr<SymbolicMemory>, std::shared_ptr<uint8_t[]>> memory;
+    std::variant<SymbolicMemoryPtr, std::shared_ptr<uint8_t[]>> memory;
     friend std::ostream& operator<<(std::ostream&, const SetMem&);
 };
 
 struct SetItem
 {
-    std::shared_ptr<SymbolicStackItem> loc;
-    std::shared_ptr<SymbolicStackItem> val;
+    SymbolicStackItemPtr loc;
+    SymbolicStackItemPtr val;
     friend std::ostream& operator<<(std::ostream&, const SetItem&);
 };
 
@@ -90,9 +97,9 @@ struct SymbolicUpdates
 {
     // we shouuld only ever have one evmc_address per SymbolicUpdates list
     std::variant<T, evmc_address> head;
-    std::shared_ptr<SymbolicUpdates<T>> tail;
+    SymbolicUpdatesPtr<T> tail;
     template<typename U>
-    friend std::ostream& operator<<(std::ostream&, std::shared_ptr<SymbolicUpdates<U>>);
+    friend std::ostream& operator<<(std::ostream&, SymbolicUpdatesPtr<U>);
 };
 
 struct Pure
@@ -103,8 +110,8 @@ struct Pure
 template<typename T>
 struct Load 
 {
-    std::shared_ptr<SymbolicStackItem> addr;
-    std::shared_ptr<T> symbolic_store;
+    SymbolicStackItemPtr addr;
+    T symbolic_store;
 };
 
 enum class UnOp { iszero, not_ };
@@ -113,7 +120,7 @@ std::ostream& operator<< (std::ostream&, const UnOp&);
 struct UnaryOp
 {
     UnOp op;
-    std::shared_ptr<SymbolicStackItem> first;
+    SymbolicStackItemPtr first;
 };
 
 enum class BinOp { add, mul, sub, div, sdiv, mod, smod, exp, signextend, lt, gt, slt, sgt, eq, and_, or_, xor_, byte, shl, shr, sar, keccak256 };
@@ -122,8 +129,8 @@ std::ostream& operator<< (std::ostream&, const BinOp&);
 struct BinaryOp
 {
     BinOp op;
-    std::shared_ptr<SymbolicStackItem> first;
-    std::shared_ptr<SymbolicStackItem> second;
+    SymbolicStackItemPtr first;
+    SymbolicStackItemPtr second;
 };
 
 enum class TernOp { addmod, mulmod };
@@ -132,9 +139,9 @@ std::ostream& operator<< (std::ostream&, const TernOp&);
 struct TernaryOp
 {
     TernOp op;
-    std::shared_ptr<SymbolicStackItem> first;
-    std::shared_ptr<SymbolicStackItem> second;
-    std::shared_ptr<SymbolicStackItem> third;
+    SymbolicStackItemPtr first;
+    SymbolicStackItemPtr second;
+    SymbolicStackItemPtr third;
 };
 
 template <bool Symbolic>
@@ -148,45 +155,63 @@ struct StackItem<false> {
 template <>
 struct StackItem<true> {
     uint256 val;
-    std::shared_ptr<SymbolicStackItem> sval;
+    SymbolicStackItemPtr sval;
 
-    inline void set_symbolic(const Pure&& si)
+    // Not sure where to stick these static methods. 
+    // Ideally they would go into the SymbolicStackItem namespace, but not sure how to do that...
+
+    template <typename ...Args> inline static SymbolicStackItemPtr make_symbolic(Args&& ...args)
     {
-        sval = std::make_shared<SymbolicStackItem>(si);
+        return std::make_shared<SymbolicStackItem>(std::forward<Args>(args)...);
     }
 
-    inline void set_symbolic(const Sload&& si)
+    inline static bool is_symbolic(const SymbolicStackItemPtr& sval)
     {
-        sval = std::make_shared<SymbolicStackItem>(si);
+        return !std::holds_alternative<Pure>(*sval);
     }
 
-    inline void set_symbolic(const Mload&& si)
+    inline static bool is_pure(const SymbolicStackItemPtr& sval)
     {
-        sval = std::make_shared<SymbolicStackItem>(si);
+        return std::holds_alternative<Pure>(*sval);
     }
 
-    inline void set_symbolic(const UnaryOp&& si)
+    inline void set_symbolic(Pure&& si)
     {
-        if (std::holds_alternative<Pure>(*si.first))
-            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        sval = make_symbolic(std::forward<Pure>(si));
+    }
+
+    inline void set_symbolic(Sload&& si)
+    {
+        sval = make_symbolic(si);
+    }
+
+    inline void set_symbolic(Mload&& si)
+    {
+        sval = make_symbolic(si);
+    }
+
+    inline void set_symbolic(UnaryOp&& si)
+    {
+        if (is_pure(si.first))
+            sval = make_symbolic(Pure {val});
         else
-            sval = std::make_shared<SymbolicStackItem>(si);
+            sval = make_symbolic(si);
     }
 
-    inline void set_symbolic(const BinaryOp&& si)
+    inline void set_symbolic(BinaryOp&& si)
     {
-        if (std::holds_alternative<Pure>(*si.first) && std::holds_alternative<Pure>(*si.second))
-            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        if (is_pure(si.first) && std::holds_alternative<Pure>(*si.second))
+            sval = make_symbolic(Pure {val});
         else
-            sval = std::make_shared<SymbolicStackItem>(si);
+            sval = make_symbolic(si);
     }
 
-    inline void set_symbolic(const TernaryOp&& si)
+    inline void set_symbolic(TernaryOp&& si)
     {
-        if (std::holds_alternative<Pure>(*si.first) && std::holds_alternative<Pure>(*si.second) && std::holds_alternative<Pure>(*si.third))
-            sval = std::make_shared<SymbolicStackItem>(Pure {val});
+        if (is_pure(si.first) && is_pure(si.second) && is_pure(si.third))
+            sval = make_symbolic(Pure {val});
         else
-            sval = std::make_shared<SymbolicStackItem>(si);
+            sval = make_symbolic(si);
     }
 };
 
@@ -203,25 +228,25 @@ std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& i);
 
 struct Equal
 {
-    std::shared_ptr<SymbolicStackItem> sval;
+    SymbolicStackItemPtr sval;
     uint256 val;
 };
 
 struct NotEqual
 {
-    std::shared_ptr<SymbolicStackItem> sval;
+    SymbolicStackItemPtr sval;
     uint256 val;
 };
 
 struct LessEqual
 {
-    std::shared_ptr<SymbolicStackItem> sval;
+    SymbolicStackItemPtr sval;
     uint256 val;
 };
 
 struct Greater
 {
-    std::shared_ptr<SymbolicStackItem> sval;
+    SymbolicStackItemPtr sval;
     uint256 val;
 };
 

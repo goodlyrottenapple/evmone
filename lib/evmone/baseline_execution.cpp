@@ -311,12 +311,10 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // only reset the symbolic state if this is a 0 depth call.
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
     if constexpr (isSymbolic){
-        if(msg.depth == 0) state.symbolic.reset_all();
-        else
-        {
-            if(!state.symbolic.modified_stores) state.symbolic.modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
-            if(!state.symbolic.requirements) state.symbolic.requirements = std::make_shared<std::vector<SymbolicRequirement>>();
-        }
+        state.symbolic.reset_memory();
+        state.symbolic.reset_tstore();
+        state.symbolic.set_requirements(msg.depth == 0);
+        state.symbolic.set_modified_stores(msg.depth == 0);
 
         if (msg.depth < 1024)
         {
@@ -328,14 +326,8 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             assert(state.symbolic.requirements != nullptr);
             state.child->symbolic.requirements = state.symbolic.requirements;
         }
-        // set up the symbolic store by looking up any previous symbolic state at the recipient address,
-        // in case we are in a nested context
-        if (auto search = state.symbolic.modified_stores->find(msg.recipient); search != state.symbolic.modified_stores->end())
-        {
-            state.symbolic.store = search->second;
-        }
-        else 
-            state.symbolic.store = std::make_shared<SymbolicStorage>(msg.recipient, nullptr);
+
+        state.symbolic.set_store(msg.recipient);
     }
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
