@@ -814,7 +814,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
             if constexpr (isSymbolic) {
-                state.symbolic.update_memory(*stack.arena, dst, input_index.sval, s, state.symbolic.returndata);
+                state.symbolic.update_memory(dst, input_index.sval, s, state.symbolic.returndata);
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
             }

@@ -312,6 +312,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // only reset the symbolic state if this is a 0 depth call.
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
     if constexpr (isSymbolic){
+        state.symbolic.arena = state.arena;
         state.symbolic.reset_memory();
         state.symbolic.reset_tstore();
         state.symbolic.set_requirements(msg.depth == 0);
@@ -320,6 +321,8 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         if (msg.depth < 1024)
         {
             auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
+            state_child.arena = state.arena;
+            state_child.symbolic.arena = state.arena;
             state.child = &state_child;
             assert(state.child != nullptr);
             assert(state.symbolic.modified_stores != nullptr);

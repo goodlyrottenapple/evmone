@@ -174,6 +174,7 @@ public:
     SymbolicStackItemPtr callvalue;
     SymbolicMemoryPtr calldata = nullptr;
     SymbolicMemoryPtr returndata = nullptr;
+    ArenaAllocator* arena = nullptr;
 
     void symbolic_value_matches_concrete(const StackItem<isSymbolic>& i, std::convertible_to<const StackItem<isSymbolic>&> auto... is)
     {
@@ -200,7 +201,7 @@ public:
 
     inline void set_calldata(SymbolicStackItemPtr offset, SymbolicStackItemPtr size)
     {
-        calldata = std::make_shared<SymbolicMemory>(Offset {offset, size}, memory);
+        calldata = arena->make<SymbolicMemory>(Offset {offset, size}, memory);
     }
 
     inline void set_returndata() {
@@ -209,45 +210,45 @@ public:
 
     inline void set_returndata(size_t offset, size_t size, SymbolicMemoryPtr m)
     {
-        returndata = std::make_shared<SymbolicMemory>(SetMem {offset, size, m}, nullptr);
+        returndata = arena->make<SymbolicMemory>(SetMem {offset, size, m}, nullptr);
     }
 
     inline void set_returndata(size_t s, const void* ptr)
     {
         auto mem_copy = std::make_unique<uint8_t[]>(s);
         std::memcpy(mem_copy.get(), ptr, s);
-        returndata = std::make_shared<SymbolicMemory>(SymbolicMemory {SetMem {0, s, std::move(mem_copy)}, nullptr});
+        returndata = arena->make<SymbolicMemory>(SymbolicMemory {SetMem {0, s, std::move(mem_copy)}, nullptr});
     }
 
     inline void update_memory(size_t index, size_t size, SymbolicMemoryPtr m)
     {
-        memory = std::make_shared<SymbolicMemory>(SetMem{index, size, m}, memory);
+        memory = arena->make<SymbolicMemory>(SetMem{index, size, m}, memory);
     }
 
     inline void update_memory(size_t dst, size_t s, const void* ptr)
     {
         auto mem_copy = std::make_unique<uint8_t[]>(s);
         std::memcpy(mem_copy.get(), ptr, s);
-        memory = std::make_shared<SymbolicMemory>(SetMem{dst, s, std::move(mem_copy)}, memory);
+        memory = arena->make<SymbolicMemory>(SetMem{dst, s, std::move(mem_copy)}, memory);
     }
 
     // equivalent to std::memset(&state.memory[index], 0, size);
     inline void update_memory(size_t index, size_t size)
     {
-        memory = std::make_shared<SymbolicMemory>(SetMem{index, size, {}}, memory);
+        memory = arena->make<SymbolicMemory>(SetMem{index, size, {}}, memory);
     }
 
     // equivalent to std::memcpy(&state.memory[dst], &m[src], size);
-    inline void update_memory(ArenaAllocator& arena, size_t dst, SymbolicStackItemPtr src, size_t size, SymbolicMemoryPtr m)
+    inline void update_memory(size_t dst, SymbolicStackItemPtr src, size_t size, SymbolicMemoryPtr m)
     {
-        auto ssize = StackItem<true>::make_symbolic(arena, Pure {size});
-        auto soffset = std::make_shared<SymbolicMemory>(Offset {src, ssize}, m);
-        memory = std::make_shared<SymbolicMemory>(SetMem{dst, size, soffset}, memory);
+        auto ssize = StackItem<true>::make_symbolic(*arena, Pure {size});
+        auto soffset = arena->make<SymbolicMemory>(Offset {src, ssize}, m);
+        memory = arena->make<SymbolicMemory>(SetMem{dst, size, soffset}, memory);
     }
 
     inline void update_memory(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
-        memory = std::make_shared<SymbolicMemory>(SetItem{k,v}, memory);
+        memory = arena->make<SymbolicMemory>(SetItem{k,v}, memory);
     }
 
     inline void reset_memory() noexcept
@@ -257,7 +258,7 @@ public:
 
     inline void update_tstore(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
-        tstore = std::make_shared<SymbolicStorage>(SetItem{k,v}, tstore);
+        tstore = arena->make<SymbolicStorage>(SetItem{k,v}, tstore);
     }
 
     inline void reset_tstore() noexcept
@@ -274,12 +275,12 @@ public:
             store = search->second;
         }
         else 
-            store = std::make_shared<SymbolicStorage>(init, nullptr);
+            store = arena->make<SymbolicStorage>(init, nullptr);
     }
 
     inline void update_store(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
     {
-        store = std::make_shared<SymbolicStorage>(SetItem{k,v}, store);
+        store = arena->make<SymbolicStorage>(SetItem{k,v}, store);
     }
 };
 

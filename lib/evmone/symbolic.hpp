@@ -27,7 +27,7 @@ template<typename>
 struct SymbolicUpdates;
 
 template <class T>
-using SymbolicUpdatesPtr = std::shared_ptr<SymbolicUpdates<T>>;
+using SymbolicUpdatesPtr = SymbolicUpdates<T>*;
 
 struct SetItem;
 struct Offset;

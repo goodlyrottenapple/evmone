@@ -76,8 +76,8 @@ std::ostream& operator<<(std::ostream& os, const SetItem& i)
 std::ostream& operator<<(std::ostream& os, const SetMem& i)
 {
     os << "overlay ";
-    if(std::holds_alternative<std::shared_ptr<SymbolicMemory>>(i.memory)) {
-        auto& mem_ptr = std::get<std::shared_ptr<SymbolicMemory>>(i.memory);
+    if(std::holds_alternative<SymbolicMemoryPtr>(i.memory)) {
+        auto& mem_ptr = std::get<SymbolicMemoryPtr>(i.memory);
         if(mem_ptr) os << "$" << &*mem_ptr;
         else os << "<empty memory>";
     }
@@ -102,7 +102,7 @@ std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& si) {
 }
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicUpdates<T>> i)
+std::ostream& operator<<(std::ostream& os, SymbolicUpdatesPtr<T> i)
 {
     if(i == nullptr) {
         os << std::flush;
@@ -121,8 +121,8 @@ std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicUpdates<T>> i
     return os; 
 }
 
-template std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicStorage> i);
-template std::ostream& operator<<(std::ostream& os, std::shared_ptr<SymbolicMemory> i);
+template std::ostream& operator<<(std::ostream& os, SymbolicStoragePtr i);
+template std::ostream& operator<<(std::ostream& os, SymbolicMemoryPtr i);
 
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {
