@@ -41,6 +41,15 @@ class StackSpace
 #else
         const auto p = std::aligned_alloc(alignment, size);
 #endif
+        if constexpr (isSymbolic)
+        {
+            for (size_t i = 0; i < limit; i++)
+            {
+                StackItem<isSymbolic>* ptr = &static_cast<StackItem<isSymbolic>*>(p)[i];
+                ptr = new(ptr) StackItem<true> {0, SymbolicStackItemPtr()};
+            }
+            
+        }
         return static_cast<StackItem<isSymbolic>*>(p);
     }
 
@@ -302,6 +311,7 @@ public:
     /// Symbolic storage
     ExecutionState<isSymbolic>* child = nullptr;
     SymbolicState<isSymbolic> symbolic;
+    ArenaAllocator* arena = nullptr;
 private:
     evmc_tx_context m_tx = {};
 
@@ -327,7 +337,10 @@ public:
         const evmc_host_interface& host_interface, evmc_host_context* host_ctx,
         bytes_view _code) noexcept
       : msg{&message}, host{host_interface, host_ctx}, rev{revision}, original_code{_code}
-    {}
+    {
+        if constexpr (isSymbolic)
+            assert(arena != nullptr);
+    }
 
     /// Resets the contents of the ExecutionState so that it could be reused.
     void reset(const evmc_message& message, evmc_revision revision,

@@ -38,7 +38,7 @@ struct AdvancedExecutionState : ExecutionState<false>
     int64_t gas_left = 0;
 
     /// Pointer to the stack top.
-    StackTop<false> stack = stack_space.bottom();
+    StackTop<false> stack = StackTop(stack_space.bottom(), nullptr);
 
     /// The gas cost of the current block.
     ///

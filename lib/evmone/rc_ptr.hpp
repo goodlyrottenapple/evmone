@@ -20,7 +20,7 @@ public:
 
     void release()
     {
-        if (rc) {
+        if(rc != nullptr) {
             --*rc;
             if(*rc == 0) {
                 if(mPtr != nullptr) 
@@ -56,6 +56,7 @@ public:
     //Assign another rc_ptr
     rc_ptr &operator=(const rc_ptr &ptr)
     {
+        if(ptr.rc != nullptr) ++*ptr.rc;
         release();
         rc = ptr.rc;
         arena = ptr.arena;

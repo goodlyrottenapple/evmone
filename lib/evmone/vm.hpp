@@ -27,6 +27,7 @@ public:
 private:
     std::vector<ExecutionState<isSymbolic>> m_execution_states;
     std::unique_ptr<Tracer<isSymbolic>> m_first_tracer;
+    ArenaAllocator arena;
 
 public:
     VM() noexcept;
@@ -40,6 +41,11 @@ public:
         while (*end)
             end = &(*end)->m_next_tracer;
         *end = std::move(tracer);
+    }
+
+    ArenaAllocator* get_arena()
+    {
+        return &arena;
     }
 
     [[nodiscard]] Tracer<isSymbolic>* get_tracer() const noexcept { return m_first_tracer.get(); }

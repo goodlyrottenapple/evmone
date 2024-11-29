@@ -98,9 +98,9 @@ struct Position
 /// @{
 template <bool isSymbolic>
 [[release_inline]] inline code_iterator invoke(void (*instr_fn)(StackTop<isSymbolic>) noexcept, Position<isSymbolic> pos,
-    int64_t& /*gas*/, ExecutionState<isSymbolic>& /*state*/) noexcept
+    int64_t& /*gas*/, ExecutionState<isSymbolic>& state) noexcept
 {
-    instr_fn(pos.stack_top);
+    instr_fn(StackTop(pos.stack_top, state.arena));
     return pos.code_it + 1;
 }
 
@@ -109,7 +109,7 @@ template <bool isSymbolic>
     Result (*instr_fn)(StackTop<isSymbolic>, int64_t, ExecutionState<isSymbolic>&) noexcept, Position<isSymbolic> pos, int64_t& gas,
     ExecutionState<isSymbolic>& state) noexcept
 {
-    const auto o = instr_fn(pos.stack_top, gas, state);
+    const auto o = instr_fn(StackTop(pos.stack_top, state.arena), gas, state);
     gas = o.gas_left;
     if (o.status != EVMC_SUCCESS)
     {
@@ -123,7 +123,7 @@ template <bool isSymbolic>
 [[release_inline]] inline code_iterator invoke(void (*instr_fn)(StackTop<isSymbolic>, ExecutionState<isSymbolic>&) noexcept,
     Position<isSymbolic> pos, int64_t& /*gas*/, ExecutionState<isSymbolic>& state) noexcept
 {
-    instr_fn(pos.stack_top, state);
+    instr_fn(StackTop(pos.stack_top, state.arena), state);
     return pos.code_it + 1;
 }
 
@@ -132,15 +132,15 @@ template <bool isSymbolic>
     code_iterator (*instr_fn)(StackTop<isSymbolic>, ExecutionState<isSymbolic>&, code_iterator) noexcept, Position<isSymbolic> pos,
     int64_t& /*gas*/, ExecutionState<isSymbolic>& state) noexcept
 {
-    return instr_fn(pos.stack_top, state, pos.code_it);
+    return instr_fn(StackTop(pos.stack_top, state.arena), state, pos.code_it);
 }
 
 template <bool isSymbolic>
 [[release_inline]] inline code_iterator invoke(
     code_iterator (*instr_fn)(StackTop<isSymbolic>, code_iterator) noexcept, Position<isSymbolic> pos, int64_t& /*gas*/,
-    ExecutionState<isSymbolic>& /*state*/) noexcept
+    ExecutionState<isSymbolic>& state) noexcept
 {
-    return instr_fn(pos.stack_top, pos.code_it);
+    return instr_fn(StackTop(pos.stack_top, state.arena), pos.code_it);
 }
 
 template <bool isSymbolic>
@@ -148,7 +148,7 @@ template <bool isSymbolic>
     TermResult (*instr_fn)(StackTop<isSymbolic>, int64_t, ExecutionState<isSymbolic>&) noexcept, Position<isSymbolic> pos, int64_t& gas,
     ExecutionState<isSymbolic>& state) noexcept
 {
-    const auto result = instr_fn(pos.stack_top, gas, state);
+    const auto result = instr_fn(StackTop(pos.stack_top, state.arena), gas, state);
     gas = result.gas_left;
     state.status = result.status;
     return nullptr;
@@ -159,7 +159,7 @@ template <bool isSymbolic>
     Result (*instr_fn)(StackTop<isSymbolic>, int64_t, ExecutionState<isSymbolic>&, code_iterator&) noexcept, Position<isSymbolic> pos,
     int64_t& gas, ExecutionState<isSymbolic>& state) noexcept
 {
-    const auto result = instr_fn(pos.stack_top, gas, state, pos.code_it);
+    const auto result = instr_fn(StackTop(pos.stack_top, state.arena), gas, state, pos.code_it);
     gas = result.gas_left;
     if (result.status != EVMC_SUCCESS)
     {
@@ -174,7 +174,7 @@ template <bool isSymbolic>
     TermResult (*instr_fn)(StackTop<isSymbolic>, int64_t, ExecutionState<isSymbolic>&, code_iterator) noexcept,
     Position<isSymbolic> pos, int64_t& gas, ExecutionState<isSymbolic>& state) noexcept
 {
-    const auto result = instr_fn(pos.stack_top, gas, state, pos.code_it);
+    const auto result = instr_fn(StackTop(pos.stack_top, state.arena), gas, state, pos.code_it);
     gas = result.gas_left;
     state.status = result.status;
     return nullptr;
@@ -307,6 +307,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     auto gas = msg.gas;
 
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
+    state.arena = vm.get_arena();
     state.reset(msg, rev, host, ctx, analysis.raw_code());
     // only reset the symbolic state if this is a 0 depth call.
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.

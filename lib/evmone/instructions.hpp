@@ -25,12 +25,16 @@ class StackTop
 
 public:
     ArenaAllocator* arena;
-    StackTop(StackItem<isSymbolic>* top) noexcept : m_top{top}, arena{nullptr} {}
+    StackTop(StackItem<isSymbolic>* top, ArenaAllocator* a) noexcept : m_top{top}, arena{a} {
+        if constexpr (isSymbolic) assert(arena != nullptr);
+    }
 
     /// Returns the reference to the stack item by index, where 0 means the top item
     /// and positive index values the items further down the stack.
     /// Using [-1] is also valid, but .push() should be used instead.
     [[nodiscard]] StackItem<isSymbolic>& operator[](int index) noexcept { return m_top[-index]; }
+
+    StackTop& operator=(StackItem<isSymbolic>* i) { m_top = i; return *this; }
 
     /// Returns the reference to the stack top item.
     [[nodiscard]] uint256& top() noexcept { auto& r = *m_top; return r.val; }
@@ -44,15 +48,19 @@ public:
     /// Assigns the value to the stack top and moves the stack top pointer up.
     void push(const uint256& value) noexcept { 
         ++m_top;
-        std::memset((void*)m_top, 0, sizeof(StackItem<isSymbolic>));
         if constexpr (isSymbolic)
+        {
             *m_top = {value, StackItem<true>::make_symbolic(*arena, Pure {value})};
+        }
         else 
+        {
+            std::memset((void*)m_top, 1, sizeof(StackItem<isSymbolic>));
             *m_top = {value};
+        }    
     }
     void push(const StackItem<isSymbolic>& value) noexcept { 
         ++m_top;
-        std::memset((void*)m_top, 0, sizeof(StackItem<isSymbolic>));
+        if constexpr (!isSymbolic) std::memset((void*)m_top, 2, sizeof(StackItem<isSymbolic>));
         *m_top = value; 
     }
 };
@@ -538,7 +546,10 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
-        if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Load {StackItem<true>::make_symbolic(*stack.arena, Pure {index.val}), state.symbolic.calldata});
+        if constexpr (isSymbolic) {
+            auto ptr = StackItem<true>::make_symbolic(*stack.arena, Pure {index.val});
+            index.set_symbolic(*stack.arena, Mload {ptr, state.symbolic.calldata});
+        }
     }
 }
 

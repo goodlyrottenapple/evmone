@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 namespace evmone
 {
@@ -22,15 +23,15 @@ class ArenaAllocator
     static_assert(max_alloc_size % alignment == 0);
     static_assert(block_size % max_alloc_size == 0);
 
-    unsigned char* block;
-    std::vector<unsigned char*> blocks;
+    char* block;
+    std::vector<char*> blocks;
     ssize_t block_usage;
     size_t block_no;
     CacheElement* cache[cache_size];
 
 public:
     ArenaAllocator()
-        : block{new unsigned char[block_size]}, blocks{block}, block_usage{}, block_no{}, cache{}
+        : block{new char[block_size]}, blocks{block}, block_usage{}, block_no{}, cache{}
     {}
 
     ArenaAllocator(ArenaAllocator &&other)
@@ -55,7 +56,7 @@ public:
 
     ~ArenaAllocator()
     {
-        for (unsigned char* p : blocks)
+        for (char* p : blocks)
             delete[] p;
     }
 
@@ -73,7 +74,7 @@ public:
 
     template<typename T>
     [[nodiscard]]
-    unsigned char* alloc()
+    char* alloc()
     {
         static ssize_t constexpr N = sizeof(T);
         static_assert(N >= alignment);
@@ -90,7 +91,7 @@ public:
                 if (block_no < blocks.size()) block = blocks[block_no];
                 else 
                 {
-                    block = new unsigned char[block_size];
+                    block = new char[block_size];
                     blocks.push_back(block);
                 }
                 block_usage = n;
@@ -101,14 +102,14 @@ public:
             e = cache[i];
             cache[i] = e->next;
         }
-        return (unsigned char*)e;
+        return (char*)e;
     }
 
     template<typename T, typename ...Args>
     [[nodiscard]]
     T* make(Args&& ...args)
     {
-        unsigned char* ptr = alloc<T>();
+        char* ptr = alloc<T>();
         return new(ptr) T(std::forward<Args>(args)...);
     }
 
@@ -121,6 +122,7 @@ public:
         static ssize_t constexpr n = N + (N % alignment);
         static ssize_t constexpr i = (n / alignment) - 1;
         static_assert(i < cache_size);
+        assert(x != nullptr);
 
         CacheElement* e = cache[i];
         ((CacheElement*)x)->next = e;
