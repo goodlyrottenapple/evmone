@@ -46,13 +46,11 @@ using SymbolicStoragePtr = SymbolicUpdatesPtr<SetItem>;
 
 struct MapComparator
 {
-    bool operator()( const evmc_address& a, const evmc_address& b ) const 
+    bool operator()( const evmc_address& a, const evmc_address& b) const 
     {
-        for (size_t i = 0; i < 20; i++)
-        {
-            if(a.bytes[i]<b.bytes[i]) return true;
-        }
-        return false;
+        if ((uint64_t)a.bytes[0] < (uint64_t)b.bytes[0]) return true;
+        if ((uint64_t)a.bytes[8] < (uint64_t)b.bytes[8]) return true;
+        return (uint32_t)a.bytes[16] < (uint32_t)b.bytes[16];
     }
 };
 
