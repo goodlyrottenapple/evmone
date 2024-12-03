@@ -1061,19 +1061,21 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
 
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Load<SymbolicStoragePtr> {x.sval, state.symbolic.tstore});
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.tstore, Sload {key});
 }
 
 template <bool isSymbolic> 
 inline Result tstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
+    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(stack[0]);
+
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, 0};
 
     const auto key = intx::be::store<evmc::bytes32>(stack[0].val);
     const auto value = intx::be::store<evmc::bytes32>(stack[1].val);
     state.host.set_transient_storage(state.msg->recipient, key, value);
-    if constexpr (isSymbolic) state.symbolic.update_tstore(stack[0].sval, stack[1].sval);
+    if constexpr (isSymbolic) state.symbolic.update_tstore(key, stack[1].sval);
     return {EVMC_SUCCESS, gas_left};
 }
 

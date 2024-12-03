@@ -48,6 +48,7 @@ public:
     {
         block = other.block;
         block_usage = other.block_usage;
+        block_no = other.block_no;
         memcpy(cache, other.cache, sizeof(cache));
         blocks = {};
         std::swap(blocks, other.blocks);

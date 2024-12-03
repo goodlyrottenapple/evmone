@@ -59,7 +59,9 @@ std::ostream& operator<< (std::ostream& os, const TernOp& op)
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     std::visit(Cases{
         [&](const Pure& i) { os << "0x" << intx::hex(i.pure);  },
-        [&](const Sload& i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
+        [&](const Sload&) { os << "LOAD(" << "???" 
+            // intx::hex(i.key) 
+            << ")"; },
         [&](const Mload&i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
@@ -121,7 +123,6 @@ std::ostream& operator<<(std::ostream& os, SymbolicUpdatesPtr<T> i)
     return os; 
 }
 
-template std::ostream& operator<<(std::ostream& os, SymbolicStoragePtr i);
 template std::ostream& operator<<(std::ostream& os, SymbolicMemoryPtr i);
 
 
@@ -134,5 +135,34 @@ std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {
     }, si);
     return os;
 }
+
+// uint256 eval_Sload(uint256 addr, SymbolicStoragePtr symbolic, )
+
+
+
+// uint256 eval_SymbolicStackItem(SymbolicStackItemPtr ptr)
+// {
+//     std::visit(Cases{
+//         [&](const Pure& i) { return i.pure;  },
+//         // [&](const Sload& i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
+//         // [&](const Mload&i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
+//         [&](const UnaryOp& i) { return 0; },
+//         [&](const BinaryOp& i) { return 0; },
+//         [&](const TernaryOp& i) { return 0; }
+//     }, *ptr);
+// }
+
+// StorageMap eval_SymbolicStorage(StorageMap init, SymbolicStoragePtr symbolic)
+// {
+//     if(std::holds_alternative<evmc_address>(symbolic->head)) {
+//         assert(symbolic->tail == nullptr);
+//         return init;
+//     }
+//     assert(symbolic->tail != nullptr);
+//     auto intermediate = eval_SymbolicStorage(init, symbolic->tail);
+
+//     return intermediate;
+// }
+
 
 }

@@ -39,12 +39,7 @@ using SymbolicMemoryUpdate =
 std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
 
 
-
-using SymbolicStorage = SymbolicUpdates<SetItem>;
-using SymbolicStoragePtr = SymbolicUpdatesPtr<SetItem>;
-
-
-struct MapComparator
+struct MapComparatorEvmcAddress
 {
     bool operator()( const evmc_address& a, const evmc_address& b) const 
     {
@@ -54,18 +49,42 @@ struct MapComparator
     }
 };
 
-using SymbolicStorageMap = std::map<evmc_address, SymbolicStoragePtr, MapComparator>;
 
 using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
 using SymbolicMemoryPtr = SymbolicUpdatesPtr<SymbolicMemoryUpdate>;
 using PlainMemoryPtr = std::shared_ptr<uint8_t[]>;
 
-using Sload = Load<SymbolicStoragePtr>;
+// using Sload = Load<SymbolicStoragePtr>;
+struct Sload 
+{
+    evmc_bytes32 key;
+};
+
 using Mload = Load<SymbolicMemoryPtr>;
 
 using SymbolicStackItem =
         std::variant<Pure, Sload, Mload, UnaryOp, BinaryOp, TernaryOp>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
+
+
+using SymbolicMemory2 = std::map<evmc_bytes32, SymbolicStackItemPtr>;
+struct MapComparatorEvmcBytes32
+{
+    bool operator()( const evmc_bytes32& a, const evmc_bytes32& b) const 
+    {
+        if ((uint64_t)a.bytes[0] < (uint64_t)b.bytes[0]) return true;
+        if ((uint64_t)a.bytes[8] < (uint64_t)b.bytes[8]) return true;
+        return (uint32_t)a.bytes[16] < (uint32_t)b.bytes[16];
+    }
+};
+
+using SymbolicStorage = std::map<evmc_bytes32, SymbolicStackItemPtr, MapComparatorEvmcBytes32>;
+using SymbolicStoragePtr = SymbolicStorage*;
+
+
+using SymbolicStorageMap = std::map<evmc_address, SymbolicStoragePtr, MapComparatorEvmcAddress>;
+
+
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
 
@@ -179,9 +198,15 @@ struct StackItem<true> {
         sval = make_symbolic(arena, std::forward<Pure>(si));
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, Sload&& si)
+    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, Sload&& si)
     {
-        sval = make_symbolic(arena, si);
+        
+        if (auto search = storage->find(si.key); search != storage->end())
+        {
+            sval = search->second;
+        }
+        else
+            sval = make_symbolic(arena, si);
     }
 
     inline void set_symbolic(ArenaAllocator& arena, Mload&& si)
@@ -248,5 +273,10 @@ struct Greater
     SymbolicStackItemPtr sval;
     uint256 val;
 };
+
+// uint256 eval_SymbolicStackItem(SymbolicStackItemPtr);
+
+// using StorageMap = std::map<evmc::bytes32, evmc::bytes32>;
+// StorageMap eval_SymbolicStorage(StorageMap, SymbolicStoragePtr);
 
 }

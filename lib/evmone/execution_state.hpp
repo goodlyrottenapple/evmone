@@ -169,6 +169,7 @@ public:
     SymbolicStorageMapPtr modified_stores = nullptr;
     SymbolicStoragePtr store = nullptr;
     SymbolicMemoryPtr memory = nullptr;
+    SymbolicMemory2 memory2;
     SymbolicStoragePtr tstore = nullptr;
     SymbolicStackItemPtr caller;
     SymbolicStackItemPtr callvalue;
@@ -195,7 +196,7 @@ public:
 
     inline void set_modified_stores(bool reset)
     {
-        if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparator {}));
+        if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparatorEvmcAddress {}));
         if(reset) modified_stores->clear();
     }
 
@@ -256,9 +257,9 @@ public:
         memory = nullptr;
     }
 
-    inline void update_tstore(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
+    inline void update_tstore(evmc_bytes32 k, SymbolicStackItemPtr v)
     {
-        tstore = arena->make<SymbolicStorage>(SetItem{k,v}, tstore);
+        (*tstore)[k] = v;
     }
 
     inline void reset_tstore() noexcept
@@ -275,12 +276,12 @@ public:
             store = search->second;
         }
         else 
-            store = arena->make<SymbolicStorage>(init, nullptr);
+            store = new SymbolicStorage(MapComparatorEvmcBytes32 {});
     }
 
-    inline void update_store(SymbolicStackItemPtr k, SymbolicStackItemPtr v)
+    inline void update_store(evmc_bytes32 k, SymbolicStackItemPtr v)
     {
-        store = arena->make<SymbolicStorage>(SetItem{k,v}, store);
+        (*store)[k] = v;
     }
 };
 
