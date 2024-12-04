@@ -16,7 +16,7 @@ class ArenaAllocator
     };
 
     static ssize_t constexpr alignment = sizeof(CacheElement);
-    static ssize_t constexpr max_alloc_size = 256;
+    static ssize_t constexpr max_alloc_size = 1024;
     static ssize_t constexpr block_size = 4 * 1024;
     static ssize_t constexpr cache_size = max_alloc_size / alignment;
 

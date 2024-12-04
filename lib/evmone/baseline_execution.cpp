@@ -313,7 +313,6 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
     if constexpr (isSymbolic){
         state.symbolic.arena = state.arena;
-        state.symbolic.reset_memory();
         state.symbolic.reset_tstore();
         state.symbolic.set_requirements(msg.depth == 0);
         state.symbolic.set_modified_stores(msg.depth == 0);

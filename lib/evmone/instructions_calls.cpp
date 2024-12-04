@@ -72,10 +72,10 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!check_memory(gas_left, state.memory, input_offset_u256.val, input_size_u256.val))
+    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256.val, input_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    if (!check_memory(gas_left, state.memory, output_offset_u256.val, output_size_u256.val))
+    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, output_offset_u256.val, output_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto input_offset = static_cast<size_t>(input_offset_u256.val);
@@ -105,7 +105,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-                state.child->symbolic.set_calldata(input_offset_u256.sval, input_size_u256.sval);
+            state.child->symbolic.set_calldata(input_offset, input_size);
     }
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
@@ -149,8 +149,8 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     if constexpr (isSymbolic)
     {
         if (state.child && state.child->output_size != 0)
-            state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory);
-        else 
+            state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
+        else
             state.symbolic.set_returndata();
     }
     stack.top() = result.status_code == EVMC_SUCCESS;
@@ -160,7 +160,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
         if constexpr (isSymbolic)
             if (state.child != nullptr)
-                state.symbolic.update_memory(output_offset, copy_size, state.child->symbolic.memory);
+                state.symbolic.update_memory(output_offset, copy_size, &state.child->symbolic.memory);
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
@@ -216,7 +216,7 @@ Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!check_memory(gas_left, state.memory, input_offset_u256, input_size_u256))
+    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto input_offset = static_cast<size_t>(input_offset_u256);
@@ -327,7 +327,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     stack.push(0);  // Assume failure.
     state.return_data.clear();
 
-    if (!check_memory(gas_left, state.memory, init_code_offset_u256.val, init_code_size_u256.val))
+    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, init_code_offset_u256.val, init_code_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto init_code_offset = static_cast<size_t>(init_code_offset_u256.val);
@@ -360,8 +360,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         msg.input_size = init_code_size;
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-                state.child->symbolic.set_calldata(init_code_offset_u256.sval, init_code_size_u256.sval);
-
+                state.child->symbolic.set_calldata(init_code_offset, init_code_size);
         if (state.rev >= EVMC_PRAGUE)
         {
             // EOF initcode is not allowed for legacy creation
@@ -380,8 +379,15 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
 
     state.return_data.assign(result.output_data, result.output_size);
 
+
     if constexpr (isSymbolic)
-        state.symbolic.set_returndata(result.output_size, result.output_data);
+    {
+        if (state.child && state.child->output_size != 0)
+            state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
+        else
+            state.symbolic.set_returndata();
+    }
+
 
     if (result.status_code == EVMC_SUCCESS)
     {
@@ -407,7 +413,7 @@ Result eofcreate(
     stack.push(0);  // Assume failure.
     state.return_data.clear();
 
-    if (!check_memory(gas_left, state.memory, input_offset_u256, input_size_u256))
+    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto initcontainer_index = pos[1];

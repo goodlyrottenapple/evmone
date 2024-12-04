@@ -14,17 +14,17 @@ struct rc_ptr_data
 template < class T >
 class rc_ptr
 {
-private:
-    rc_ptr(rc_ptr_data<T>* ptr) : mPtr(ptr) { }
 public:
     rc_ptr() : mPtr(nullptr) { }
+
+    rc_ptr(rc_ptr_data<T>* ptr) : mPtr(ptr) { }
 
     rc_ptr(const rc_ptr &ptr) : mPtr(ptr.mPtr)
     {
         if(mPtr != nullptr) ++mPtr->rc;
     }
 
-    void release()
+    static void release(rc_ptr_data<T> *mPtr)
     {
         if(mPtr != nullptr) {
             --mPtr->rc;
@@ -37,7 +37,7 @@ public:
 
     ~rc_ptr()
     {
-        release();
+        rc_ptr::release(mPtr);
     }
 
     template<typename ...Args>
@@ -52,7 +52,7 @@ public:
     rc_ptr &operator=(const rc_ptr &ptr)
     {
         if(ptr.mPtr != nullptr) ++ptr.mPtr->rc;
-        release();
+        rc_ptr::release(mPtr);
         mPtr = ptr.mPtr;
         return *this;
     }
@@ -80,6 +80,11 @@ public:
         other.mPtr = this_mPtr;
         // other.arena = this_arena;
         // other.rc = this_rc;
+    }
+
+    rc_ptr_data<T>* raw()
+    {
+        return mPtr;
     }
 
 private:

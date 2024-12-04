@@ -62,7 +62,7 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
         [&](const Sload&) { os << "LOAD(" << "???" 
             // intx::hex(i.key) 
             << ")"; },
-        [&](const Mload&i) { os << "LOAD(" << *i.addr << ", $" << &*i.symbolic_store << ")"; },
+        [&](const Slice&) { os << "SLICE..."; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }
@@ -70,61 +70,11 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const SetItem& i)
-{
-    return os << *i.loc << " -> " << *i.val; 
-}
-
-std::ostream& operator<<(std::ostream& os, const SetMem& i)
-{
-    os << "overlay ";
-    if(std::holds_alternative<SymbolicMemoryPtr>(i.memory)) {
-        auto& mem_ptr = std::get<SymbolicMemoryPtr>(i.memory);
-        if(mem_ptr) os << "$" << &*mem_ptr;
-        else os << "<empty memory>";
-    }
-    else os << "<bytes view>";
-    os << " at index " << i.index << ", size " << i.size; 
-    return os;
-}
 
 std::ostream& operator<<(std::ostream& os, const Offset& i)
 {
     return os << "slice at index" << *i.offset << ", size " << *i.size; 
 }
-
-
-std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& si) {
-    std::visit(Cases{
-        [&](const SetItem& i) { os << i;  },
-        [&](const SetMem& i) { os << i; },
-        [&](const Offset&i) { os << i; }
-    }, si);
-    return os;
-}
-
-template <typename T>
-std::ostream& operator<<(std::ostream& os, SymbolicUpdatesPtr<T> i)
-{
-    if(i == nullptr) {
-        os << std::flush;
-        return os;
-    }
-    os << "$" << &*i << ": ";
-    if (std::holds_alternative<evmc_address>(i->head))
-    {
-        auto addr = std::get<evmc_address>(i->head);
-
-        os << "init storage of 0x" << evmc::hex({addr.bytes, sizeof(addr.bytes)});
-    }
-    else
-        os << std::get<T>(i->head);
-    os << " ;\n" << i->tail;
-    return os; 
-}
-
-template std::ostream& operator<<(std::ostream& os, SymbolicMemoryPtr i);
-
 
 std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& si) {
     std::visit(Cases{

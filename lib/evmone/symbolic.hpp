@@ -18,25 +18,13 @@ namespace evmone
 {
 
 struct Pure;
-template<typename>
-struct Load;
+struct Slice;
 struct UnaryOp;
 struct BinaryOp;
 struct TernaryOp;
-template<typename>
-struct SymbolicUpdates;
-
-template <class T>
-using SymbolicUpdatesPtr = SymbolicUpdates<T>*;
-
 struct SetItem;
 struct Offset;
 struct SetMem;
-
-
-using SymbolicMemoryUpdate =
-    std::variant<SetItem, SetMem, Offset>;
-std::ostream& operator<<(std::ostream& os, const SymbolicMemoryUpdate& i);
 
 
 struct MapComparatorEvmcAddress
@@ -50,8 +38,6 @@ struct MapComparatorEvmcAddress
 };
 
 
-using SymbolicMemory = SymbolicUpdates<SymbolicMemoryUpdate>;
-using SymbolicMemoryPtr = SymbolicUpdatesPtr<SymbolicMemoryUpdate>;
 using PlainMemoryPtr = std::shared_ptr<uint8_t[]>;
 
 // using Sload = Load<SymbolicStoragePtr>;
@@ -60,14 +46,12 @@ struct Sload
     evmc_bytes32 key;
 };
 
-using Mload = Load<SymbolicMemoryPtr>;
 
 using SymbolicStackItem =
-        std::variant<Pure, Sload, Mload, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<Pure, Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 
-using SymbolicMemory2 = std::map<evmc_bytes32, SymbolicStackItemPtr>;
 struct MapComparatorEvmcBytes32
 {
     bool operator()( const evmc_bytes32& a, const evmc_bytes32& b) const 
@@ -95,41 +79,24 @@ struct Offset {
     friend std::ostream& operator<<(std::ostream&, const Offset&);
 };
 
-struct SetMem
-{
-    size_t index;
-    size_t size;
-    std::variant<SymbolicMemoryPtr, std::shared_ptr<uint8_t[]>> memory;
-    friend std::ostream& operator<<(std::ostream&, const SetMem&);
+struct Slice8 {
+    SymbolicStackItemPtr symbolic;
+    uint8_t concrete_or_offset;
+
+    inline bool is_concrete()
+    {
+        return symbolic.raw() == nullptr;
+    }
 };
 
-struct SetItem
-{
-    SymbolicStackItemPtr loc;
-    SymbolicStackItemPtr val;
-    friend std::ostream& operator<<(std::ostream&, const SetItem&);
+struct Slice {
+    Slice8 word[32];
 };
 
-template<typename T>
-struct SymbolicUpdates 
-{
-    // we shouuld only ever have one evmc_address per SymbolicUpdates list
-    std::variant<T, evmc_address> head;
-    SymbolicUpdatesPtr<T> tail;
-    template<typename U>
-    friend std::ostream& operator<<(std::ostream&, SymbolicUpdatesPtr<U>);
-};
 
 struct Pure
 {
     uint256 pure;
-};
-
-template<typename T>
-struct Load 
-{
-    SymbolicStackItemPtr addr;
-    T symbolic_store;
 };
 
 enum class UnOp { iszero, not_ };
@@ -207,11 +174,6 @@ struct StackItem<true> {
         }
         else
             sval = make_symbolic(arena, si);
-    }
-
-    inline void set_symbolic(ArenaAllocator& arena, Mload&& si)
-    {
-        sval = make_symbolic(arena, si);
     }
 
     inline void set_symbolic(ArenaAllocator& arena, UnaryOp&& si)
