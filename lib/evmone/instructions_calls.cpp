@@ -105,7 +105,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-            state.child->symbolic.set_calldata(input_offset, input_size);
+                state.child->symbolic.set_calldata(input_offset, input_size, state.symbolic.memory.data());
     }
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
@@ -151,7 +151,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         if (state.child && state.child->output_size != 0)
             state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
         else
-            state.symbolic.set_returndata();
+            state.symbolic.set_returndata(0, 0, nullptr);
     }
     stack.top() = result.status_code == EVMC_SUCCESS;
 
@@ -360,7 +360,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         msg.input_size = init_code_size;
         if constexpr (isSymbolic) 
             if (state.child != nullptr)
-                state.child->symbolic.set_calldata(init_code_offset, init_code_size);
+                state.child->symbolic.set_calldata(init_code_offset, init_code_size, state.symbolic.memory.data());
         if (state.rev >= EVMC_PRAGUE)
         {
             // EOF initcode is not allowed for legacy creation
@@ -385,7 +385,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         if (state.child && state.child->output_size != 0)
             state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
         else
-            state.symbolic.set_returndata();
+            state.symbolic.set_returndata(0, 0, nullptr);
     }
 
 

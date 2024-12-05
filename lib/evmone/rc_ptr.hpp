@@ -21,18 +21,25 @@ public:
 
     rc_ptr(const rc_ptr &ptr) : mPtr(ptr.mPtr)
     {
-        if(mPtr != nullptr) ++mPtr->rc;
+        rc_ptr::acquire(ptr.mPtr);
     }
 
     static void release(rc_ptr_data<T> *mPtr)
     {
-        if(mPtr != nullptr) {
+        if(mPtr != nullptr)
+        {
             --mPtr->rc;
-            if(mPtr->rc == 0) {
+            if(mPtr->rc == 0)
+            {
                 mPtr->object.~T();
                 mPtr->arena->free(mPtr);
             }
         }
+    }
+
+    static void acquire(rc_ptr_data<T> *mPtr)
+    {
+        if(mPtr != nullptr) ++mPtr->rc;
     }
 
     ~rc_ptr()
@@ -51,7 +58,7 @@ public:
     //Assign another rc_ptr
     rc_ptr &operator=(const rc_ptr &ptr)
     {
-        if(ptr.mPtr != nullptr) ++ptr.mPtr->rc;
+        rc_ptr::acquire(ptr.mPtr);
         rc_ptr::release(mPtr);
         mPtr = ptr.mPtr;
         return *this;

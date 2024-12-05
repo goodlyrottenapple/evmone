@@ -309,13 +309,29 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
     state.arena = vm.get_arena();
     state.reset(msg, rev, host, ctx, analysis.raw_code());
-    // only reset the symbolic state if this is a 0 depth call.
-    // for CALL opcodes, the symbolic state of the child should be set up by the calling function.
     if constexpr (isSymbolic){
         state.symbolic.arena = state.arena;
         state.symbolic.reset_tstore();
         state.symbolic.set_requirements(msg.depth == 0);
-        state.symbolic.set_modified_stores(msg.depth == 0);
+        state.symbolic.set_modified_stores(msg.depth == 0);:q
+
+        // only reset the symbolic calldata and returndata state if this is a 0 depth call.
+        // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
+        if(msg.depth == 0)
+        {
+            SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
+            state.symbolic.calldata_size = state.msg->input_size;
+            state.symbolic.calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(state.symbolic.calldata.release(), sizeof(SymbolicMemoryLocation) * state.symbolic.calldata_size)));
+            for (size_t i = 0; i < state.msg->input_size; i++)
+            {
+                state.symbolic.calldata[i].zero(true);
+                state.symbolic.calldata[i] = state.msg->input_data[i];
+            }
+
+            SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.returndata.get(), state.symbolic.returndata_size);
+            state.symbolic.returndata_size = 0;
+            state.symbolic.returndata = nullptr;
+        }
 
         if (msg.depth < 1024)
         {

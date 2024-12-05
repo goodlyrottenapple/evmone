@@ -172,6 +172,18 @@ public:
         return symbolic == nullptr;
     }
 
+    void zero(bool init = false)
+    {
+        if(!init && symbolic != nullptr) rc_ptr<SymbolicStackItem>::release(symbolic);
+        symbolic = nullptr;
+        concrete_or_offset = 0;
+    }
+
+    void acquire()
+    {
+        if(symbolic != nullptr) rc_ptr<SymbolicStackItem>::acquire(symbolic);
+    }
+
     SymbolicMemoryLocation &operator=(uint8_t v)
     {
         if(symbolic != nullptr) rc_ptr<SymbolicStackItem>::release(symbolic);
@@ -189,7 +201,7 @@ public:
             assert(!StackItem<true>::is_pure(o.symbolic));
             concrete_or_offset = o.concrete_or_offset;
             symbolic = o.symbolic.raw();
-            ++symbolic->rc;
+            rc_ptr<SymbolicStackItem>::acquire(symbolic);
         }
         else
         {
@@ -207,7 +219,7 @@ public:
 
     Slice8 get_symbolic()
     {
-        if(symbolic != nullptr) ++symbolic->rc;
+        if(symbolic != nullptr) rc_ptr<SymbolicStackItem>::acquire(symbolic);
         return {rc_ptr(symbolic), concrete_or_offset};
     }
 };
@@ -221,7 +233,7 @@ struct FreeDeleter
 
 using SymbolicMemoryPtr = std::unique_ptr<SymbolicMemoryLocation[], FreeDeleter>;
 
-
+template <bool isSymbolic>
 class SymbolicMemory
 {
     /// The size of allocation "page".
@@ -238,16 +250,21 @@ class SymbolicMemory
 
     [[noreturn, gnu::cold]] static void handle_out_of_memory() noexcept { std::terminate(); }
 
-    void allocate_capacity() noexcept
+    void allocate_capacity(bool init = false) noexcept
     {
         m_data.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(m_data.release(), sizeof(SymbolicMemoryLocation) * m_capacity)));
         if (!m_data) [[unlikely]]
             handle_out_of_memory();
+        if (init)
+            for (size_t i = 0; i < m_capacity; i++)
+            {
+                m_data[i].zero(true);
+            }
     }
 
 public:
     /// Creates Memory object with initial capacity allocation.
-    SymbolicMemory() noexcept { allocate_capacity(); }
+    SymbolicMemory() noexcept { if constexpr (isSymbolic) allocate_capacity(true); }
 
     SymbolicMemoryLocation& operator[](size_t index) noexcept { return m_data[index]; }
 
@@ -277,15 +294,22 @@ public:
 
             allocate_capacity();
         }
-        for (size_t i = m_size; i < new_size - m_size; i++)
+        for (size_t i = m_size; i < m_capacity; i++)
         {
-            m_data[i] = 0;
+            m_data[i].zero(true);
         }
         m_size = new_size;
     }
 
     /// Virtually clears the memory by setting its size to 0. The capacity stays unchanged.
-    void clear() noexcept { m_size = 0; }
+    void clear() noexcept
+    {
+        for (size_t i = 0; i < m_capacity; i++)
+        {
+            m_data[i].zero();
+        }
+        m_size = 0;
+    }
 
 };
 
@@ -301,13 +325,15 @@ public:
     SymbolicRequirementsPtr requirements = nullptr;
     SymbolicStorageMapPtr modified_stores = nullptr;
     SymbolicStoragePtr store = nullptr;
-    SymbolicMemory memory;
+    SymbolicMemory<isSymbolic> memory;
     SymbolicStoragePtr tstore = nullptr;
     SymbolicStackItemPtr caller;
     SymbolicStackItemPtr callvalue;
     // SymbolicMemoryPtr calldata = nullptr;
-    SymbolicMemoryPtr calldata2 = nullptr;
+    SymbolicMemoryPtr calldata = nullptr;
+    size_t calldata_size = 0;
     SymbolicMemoryPtr returndata = nullptr;
+    size_t returndata_size = 0;
     ArenaAllocator* arena = nullptr;
 
     void symbolic_value_matches_concrete(const StackItem<isSymbolic>& i, std::convertible_to<const StackItem<isSymbolic>&> auto... is)
@@ -333,10 +359,29 @@ public:
         if(reset) modified_stores->clear();
     }
 
-    inline void set_calldata(size_t offset, size_t size)
+    static inline void reset_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
     {
-        calldata2.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(calldata2.release(), sizeof(SymbolicMemoryLocation) * size)));
-        std::memcpy(calldata2.get(), &memory[offset], sizeof(SymbolicMemoryLocation) * size);
+        for (size_t i = 0; i < size; i++)
+        {
+            m[i].zero();
+        }
+    }
+
+    static inline void acquire_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
+    {
+        for (size_t i = 0; i < size; i++)
+        {
+            m[i].acquire();
+        }
+    }
+
+    inline void set_calldata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
+    {
+        reset_symbolic_memory_ptr(calldata.get(), calldata_size);
+        calldata_size = size;
+        calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(calldata.release(), sizeof(SymbolicMemoryLocation) * size)));
+        std::memcpy(calldata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
+        acquire_symbolic_memory_ptr(calldata.get(), calldata_size);
     }
 
     inline SymbolicStackItemPtr load_calldata(size_t begin, size_t end)
@@ -350,15 +395,15 @@ public:
 
         for (size_t i = 0; i < (end - begin); ++i)
         {
-            if(calldata2[begin + i].is_conrete()){
-                pure_data[i] = calldata2[begin + i].get_concrete();
-                symbolic.word[i] = calldata2[begin + i].get_symbolic();
+            if(calldata[begin + i].is_conrete()){
+                pure_data[i] = calldata[begin + i].get_concrete();
+                symbolic.word[i] = calldata[begin + i].get_symbolic();
                 is_full_symbolic_word = false;
             }
             else
             {
                 all_pure = false;
-                symbolic.word[i] = calldata2[begin + i].get_symbolic();
+                symbolic.word[i] = calldata[begin + i].get_symbolic();
                 if(symbolic_ptr == nullptr) symbolic_ptr = symbolic.word[i].symbolic.raw();
                 is_full_symbolic_word = 
                     is_full_symbolic_word && 
@@ -375,19 +420,24 @@ public:
         else return StackItem<true>::make_symbolic(*arena, symbolic);
     }
 
-    inline void set_returndata() {
-        returndata = nullptr;
-    }
-
     inline void set_returndata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
     {
-        returndata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(returndata.release(), sizeof(SymbolicMemoryLocation) * size)));
-        std::memcpy(returndata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
+        reset_symbolic_memory_ptr(returndata.get(), returndata_size);
+        returndata_size = size;
+        if(size > 0)
+        {
+            returndata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(returndata.release(), sizeof(SymbolicMemoryLocation) * size)));
+            std::memcpy(returndata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
+            acquire_symbolic_memory_ptr(returndata.get(), returndata_size);
+        }
+        else returndata = nullptr;
     }
 
     inline void update_memory(size_t dst, size_t src, size_t size, SymbolicMemoryPtr& m)
     {
+        reset_symbolic_memory_ptr(&memory[dst], size);
         std::memcpy(&memory[dst], &m[src], sizeof(SymbolicMemoryLocation) * size);
+        acquire_symbolic_memory_ptr(&m[src], size);
     }
 
 
@@ -401,11 +451,9 @@ public:
 
     inline void reset_memory(size_t index, size_t size)
     {
-        for (size_t i = index; i < size; i++)
-        {
-            memory[i] = 0;
-        }
+        reset_symbolic_memory_ptr(&memory[index], size);
     }
+
 
     inline void reset_memory() noexcept
     {
@@ -552,7 +600,7 @@ public:
         deploy_container = {};
         m_tx = {};
         call_stack = {};
-        symbolic.reset_memory();
+        if constexpr (isSymbolic) symbolic.reset_memory();
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }

@@ -105,7 +105,7 @@ inline constexpr int64_t copy_cost(uint64_t size_in_bytes) noexcept
 /// TODO: This function should be moved to Memory class.
 template <bool isSymbolic>
 [[gnu::noinline]] inline int64_t grow_memory(
-    int64_t gas_left, Memory& memory, SymbolicMemory& smemory, uint64_t new_size) noexcept
+    int64_t gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, uint64_t new_size) noexcept
 {
     // This implementation recomputes memory.size(). This value is already known to the caller
     // and can be passed as a parameter, but this make no difference to the performance.
@@ -120,7 +120,7 @@ template <bool isSymbolic>
     if (gas_left >= 0) [[likely]]
     {
         memory.grow(static_cast<size_t>(new_words * word_size));
-        smemory.grow(static_cast<size_t>(new_words * word_size));
+        if constexpr (isSymbolic) smemory.grow(static_cast<size_t>(new_words * word_size));
     }
     return gas_left;
 }
@@ -128,9 +128,9 @@ template <bool isSymbolic>
 /// Check memory requirements of a reasonable size.
 template <bool isSymbolic>
 inline bool check_memory(
-    int64_t& gas_left, Memory& memory, SymbolicMemory& smemory, const uint256& offset, uint64_t size) noexcept
+    int64_t& gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, const uint256& offset, uint64_t size) noexcept
 {
-    assert(memory.size() == smemory.size());
+    if constexpr (isSymbolic) assert(memory.size() == smemory.size());
     // TODO: This should be done in intx.
     // There is "branchless" variant of this using | instead of ||, but benchmarks difference
     // is within noise. This should be decided when moving the implementation to intx.
@@ -146,7 +146,7 @@ inline bool check_memory(
 /// Check memory requirements for "copy" instructions.
 template <bool isSymbolic>
 inline bool check_memory(
-    int64_t& gas_left, Memory& memory, SymbolicMemory& smemory, const uint256& offset, const uint256& size) noexcept
+    int64_t& gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, const uint256& offset, const uint256& size) noexcept
 {
     if (size == 0)  // Copy of size 0 is always valid (even if offset is huge).
         return true;
@@ -553,7 +553,10 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
         if constexpr (isSymbolic)
+        {
+            assert(state.msg->input_size == state.symbolic.calldata_size);
             index.sval = state.symbolic.load_calldata(begin, end);
+        }
     }
 }
 
@@ -587,7 +590,11 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
     if (copy_size > 0)
     {
         std::memcpy(&state.memory[dst], &state.msg->input_data[src], copy_size);
-        if constexpr (isSymbolic) state.symbolic.update_memory(dst, 0, copy_size, state.symbolic.calldata2);
+        if constexpr (isSymbolic)
+        {
+            assert(state.msg->input_size == state.symbolic.calldata_size);
+            state.symbolic.update_memory(dst, 0, copy_size, state.symbolic.calldata);
+        }
     }        
 
     if (s - copy_size > 0)
@@ -818,6 +825,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
             if constexpr (isSymbolic) {
+                assert(state.return_data.size() == state.symbolic.returndata_size);
                 state.symbolic.update_memory(dst, src, s, state.symbolic.returndata);
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
