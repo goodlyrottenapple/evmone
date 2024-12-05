@@ -313,7 +313,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         state.symbolic.arena = state.arena;
         state.symbolic.reset_tstore();
         state.symbolic.set_requirements(msg.depth == 0);
-        state.symbolic.set_modified_stores(msg.depth == 0);:q
+        state.symbolic.set_modified_stores(msg.depth == 0);
 
         // only reset the symbolic calldata and returndata state if this is a 0 depth call.
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
