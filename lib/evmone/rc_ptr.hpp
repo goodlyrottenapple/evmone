@@ -79,19 +79,19 @@ public:
     void swap(rc_ptr& other)
     {
         auto* this_mPtr = mPtr;
-        // auto* this_arena = arena;
-        // auto* this_rc = rc;
         mPtr = other.mPtr;
-        // arena = other.arena;
-        // rc = other.rc;
         other.mPtr = this_mPtr;
-        // other.arena = this_arena;
-        // other.rc = this_rc;
     }
 
     rc_ptr_data<T>* raw()
     {
         return mPtr;
+    }
+
+    size_t counter()
+    {
+        if(mPtr == nullptr) return 0;
+        return mPtr->rc;
     }
 
 private:

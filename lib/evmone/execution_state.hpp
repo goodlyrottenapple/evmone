@@ -343,7 +343,7 @@ public:
         else
             assert (requirements != nullptr);
 
-        if (!std::holds_alternative<Pure>(*i.sval))
+        if (StackItem<true>::is_symbolic(i.sval))
             requirements->push_back(Equal{i.sval, i.val});
     }
 
@@ -387,7 +387,6 @@ public:
     inline SymbolicStackItemPtr load_calldata(size_t begin, size_t end)
     {
         assert((end - begin) <= 32);
-        uint8_t pure_data[32] = {};
         Slice&& symbolic {};
         bool all_pure = true;
         bool is_full_symbolic_word = (end - begin) == 32;
@@ -396,7 +395,6 @@ public:
         for (size_t i = 0; i < (end - begin); ++i)
         {
             if(calldata[begin + i].is_conrete()){
-                pure_data[i] = calldata[begin + i].get_concrete();
                 symbolic.word[i] = calldata[begin + i].get_symbolic();
                 is_full_symbolic_word = false;
             }
@@ -413,8 +411,7 @@ public:
         }
         if(all_pure)
         {
-            auto loaded = intx::be::load<uint256>(pure_data);
-            return StackItem<true>::make_symbolic(*arena, Pure{loaded});
+            return rc_ptr<SymbolicStackItem>();
         }
         else if(is_full_symbolic_word) return symbolic.word[0].symbolic;
         else return StackItem<true>::make_symbolic(*arena, symbolic);
@@ -462,7 +459,6 @@ public:
 
     inline SymbolicStackItemPtr load_memory(size_t begin)
     {
-        uint8_t pure_data[32] = {};
         Slice&& symbolic {};
         bool all_pure = true;
         bool is_full_symbolic_word = true;
@@ -471,7 +467,6 @@ public:
         for (size_t i = 0; i < 32; ++i)
         {
             if(memory[begin + i].is_conrete()){
-                pure_data[i] = memory[begin + i].get_concrete();
                 symbolic.word[i] = memory[begin + i].get_symbolic();
                 is_full_symbolic_word = false;
             }
@@ -488,8 +483,7 @@ public:
         }
         if(all_pure)
         {
-            auto loaded = intx::be::load<uint256>(pure_data);
-            return StackItem<true>::make_symbolic(*arena, Pure{loaded});
+            return rc_ptr<SymbolicStackItem>();
         }
         else if(is_full_symbolic_word) return symbolic.word[0].symbolic;
         else return StackItem<true>::make_symbolic(*arena, symbolic);

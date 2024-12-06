@@ -50,7 +50,7 @@ public:
         ++m_top;
         if constexpr (isSymbolic)
         {
-            *m_top = {value, StackItem<true>::make_symbolic(*arena, Pure {value})};
+            *m_top = {value, rc_ptr<SymbolicStackItem>()};
         }
         else 
         {
@@ -502,7 +502,7 @@ inline Result balance(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
 
     x.val = intx::be::load<uint256>(state.host.get_balance(addr));
     // TODO do we need some constraint on gas here? probably not...
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
+    if constexpr (isSymbolic) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -539,7 +539,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
     if (state.msg->input_size < index.val) {
         index.val = 0;
-        if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
+        if constexpr (isSymbolic) index.set_pure();
     }
     else
     {
@@ -670,7 +670,7 @@ inline void blobhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
     index.val = (index.val < tx.blob_hashes_count) ?
                 intx::be::load<uint256>(tx.blob_hashes[static_cast<size_t>(index.val)]) :
                 0;
-    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
+    if constexpr (isSymbolic) index.set_pure();
 }
 
 template <bool isSymbolic> 
@@ -692,7 +692,7 @@ inline Result extcodesize(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = state.host.get_code_size(addr);
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
+    if constexpr (isSymbolic) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -730,7 +730,7 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
 
         if constexpr (isSymbolic) {
             assert(state.symbolic.requirements != nullptr);
-            if (!std::holds_alternative<Pure>(*size.sval))
+            if (StackItem<true>::is_symbolic(size.sval))
                 state.symbolic.requirements->push_back(Greater{size.sval, 0});
         }
 
@@ -769,7 +769,7 @@ inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
 
         index.val = intx::be::unsafe::load<uint256>(data);
     }
-    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
+    if constexpr (isSymbolic) index.set_pure();
 }
 
 template <bool isSymbolic> 
@@ -849,7 +849,7 @@ inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, Pure {x.val});
+    if constexpr (isSymbolic) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -867,7 +867,7 @@ inline void blockhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& st
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
 
     number.val = intx::be::load<uint256>(header);
-    if constexpr (isSymbolic) number.set_symbolic(*stack.arena, Pure {number.val});
+    if constexpr (isSymbolic) number.set_pure();
 }
 
 template <bool isSymbolic> 
@@ -1014,9 +1014,9 @@ inline code_iterator jumpi(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
     const auto& cond = stack[1];
     if constexpr (isSymbolic) {
         assert(state.symbolic.requirements != nullptr);
-        if (!std::holds_alternative<Pure>(*cond.sval))
+        if (StackItem<true>::is_symbolic(cond.sval))
         {
-            if(cond.val) state.symbolic.requirements->push_back(NotEqual{cond.sval, 0});
+            if(cond.val != 0) state.symbolic.requirements->push_back(NotEqual{cond.sval, 0});
             else state.symbolic.requirements->push_back(Equal{cond.sval, 0});
         }
     }
@@ -1176,7 +1176,7 @@ inline code_iterator push(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>
         r.val[num_full_words - 1 - i] = intx::be::unsafe::load<uint64_t>(data);
         data += sizeof(uint64_t);
     }
-    if constexpr (isSymbolic) r.set_symbolic(*stack.arena, Pure {r.val});
+    if constexpr (isSymbolic) r.set_pure();
 
     return pos + (Len + 1);
 }
@@ -1353,7 +1353,7 @@ inline void dataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
 
         index.val = intx::be::unsafe::load<uint256>(d);
     }
-    if constexpr (isSymbolic) index.set_symbolic(*stack.arena, Pure {index.val});
+    if constexpr (isSymbolic) index.set_pure();
 }
 
 template <bool isSymbolic> 

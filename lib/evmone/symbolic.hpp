@@ -17,7 +17,6 @@ struct Cases : Ts...
 namespace evmone
 {
 
-struct Pure;
 struct Slice;
 struct UnaryOp;
 struct BinaryOp;
@@ -48,7 +47,7 @@ struct Sload
 
 
 using SymbolicStackItem =
-        std::variant<Pure, Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 
@@ -93,11 +92,6 @@ struct Slice {
     Slice8 word[32];
 };
 
-
-struct Pure
-{
-    uint256 pure;
-};
 
 enum class UnOp { iszero, not_ };
 std::ostream& operator<< (std::ostream&, const UnOp&);
@@ -152,17 +146,19 @@ struct StackItem<true> {
 
     inline static bool is_symbolic(const SymbolicStackItemPtr& sval)
     {
-        return !std::holds_alternative<Pure>(*sval);
+        if(sval) return true;
+        else return false;
     }
 
     inline static bool is_pure(const SymbolicStackItemPtr& sval)
     {
-        return std::holds_alternative<Pure>(*sval);
+        if(sval) return false;
+        else return true;
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, Pure&& si)
+    inline void set_pure()
     {
-        sval = make_symbolic(arena, std::forward<Pure>(si));
+        sval = rc_ptr<SymbolicStackItem>();
     }
 
     inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, Sload&& si)
@@ -173,31 +169,43 @@ struct StackItem<true> {
             sval = search->second;
         }
         else
-            sval = make_symbolic(arena, si);
+        {
+            if (sval.counter() == 1) *sval = si;
+            else sval = make_symbolic(arena, si);
+        }
     }
 
     inline void set_symbolic(ArenaAllocator& arena, UnaryOp&& si)
     {
-        if (is_pure(si.first))
-            sval = make_symbolic(arena, Pure {val});
+        if (is_pure(si.first)) 
+            set_pure();
         else
-            sval = make_symbolic(arena, si);
+        {
+            if (sval.counter() == 1) *sval = si;
+            else sval = make_symbolic(arena, si);
+        }
     }
 
     inline void set_symbolic(ArenaAllocator& arena, BinaryOp&& si)
     {
-        if (is_pure(si.first) && std::holds_alternative<Pure>(*si.second))
-            sval = make_symbolic(arena, Pure {val});
+        if (is_pure(si.first) && is_pure(si.second))
+            set_pure();
         else
-            sval = make_symbolic(arena, si);
+        {
+            if (sval.counter() == 1) *sval = si;
+            else sval = make_symbolic(arena, si);
+        }
     }
 
     inline void set_symbolic(ArenaAllocator& arena, TernaryOp&& si)
     {
         if (is_pure(si.first) && is_pure(si.second) && is_pure(si.third))
-            sval = make_symbolic(arena, Pure {val});
+            set_pure();
         else
-            sval = make_symbolic(arena, si);
+        {
+            if (sval.counter() == 1) *sval = si;
+            else sval = make_symbolic(arena, si);
+        }
     }
 };
 
