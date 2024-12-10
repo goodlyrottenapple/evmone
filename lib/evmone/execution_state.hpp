@@ -344,7 +344,7 @@ public:
             assert (requirements != nullptr);
 
         if (StackItem<true>::is_symbolic(i.sval))
-            requirements->push_back(Equal{i.sval, i.val});
+            requirements->push_back(SymbolicRequirement{Req::equal,i.sval, i.val});
     }
 
     inline void set_requirements(bool reset)
@@ -444,6 +444,17 @@ public:
         {
             memory[dst+i] = ((uint8_t*)ptr)[i];
         }
+    }
+
+    inline SymbolicStackItemPtr keccak256_slice(size_t src, size_t size)
+    {
+        if(size == 0) return SymbolicStackItemPtr();
+        auto data = std::make_unique<Slice8[]>(size);
+        for (size_t i = 0; i < size; i++)
+        {
+            data[i] = memory[src+i].get_symbolic();
+        }
+        return StackItem<true>::make_symbolic(*arena, Keccak256 {std::move(data), size});
     }
 
     inline void reset_memory(size_t index, size_t size)

@@ -462,6 +462,8 @@ inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionS
     const auto& index = stack[0];
     auto& size = stack[1];
 
+    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index, size);
+
     if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
@@ -476,7 +478,7 @@ inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionS
     size.val = intx::be::load<uint256>(ethash::keccak256(data, s));
 
     if constexpr (isSymbolic)
-        stack[1].set_symbolic(*stack.arena, BinOp::keccak256, stack[0], stack[1]); 
+        stack[1].sval = state.symbolic.keccak256_slice(i, s);
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -731,7 +733,7 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
         if constexpr (isSymbolic) {
             assert(state.symbolic.requirements != nullptr);
             if (StackItem<true>::is_symbolic(size.sval))
-                state.symbolic.requirements->push_back(Greater{size.sval, 0});
+                state.symbolic.requirements->push_back(SymbolicRequirement{ Req::greater, size.sval, 0});
         }
 
         if (const auto num_bytes_to_clear = s - num_bytes_copied; num_bytes_to_clear > 0)
@@ -1016,8 +1018,8 @@ inline code_iterator jumpi(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
         assert(state.symbolic.requirements != nullptr);
         if (StackItem<true>::is_symbolic(cond.sval))
         {
-            if(cond.val != 0) state.symbolic.requirements->push_back(NotEqual{cond.sval, 0});
-            else state.symbolic.requirements->push_back(Equal{cond.sval, 0});
+            if(cond.val != 0) state.symbolic.requirements->push_back(SymbolicRequirement{Req::notEqual, cond.sval, 0});
+            else state.symbolic.requirements->push_back(SymbolicRequirement{Req::equal,cond.sval, 0});
         }
     }
     return cond.val ? jump_impl(state, dst) : pos + 1;

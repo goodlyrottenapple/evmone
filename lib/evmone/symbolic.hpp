@@ -24,6 +24,7 @@ struct TernaryOp;
 struct SetItem;
 struct Offset;
 struct SetMem;
+struct Keccak256;
 
 
 struct MapComparatorEvmcAddress
@@ -41,9 +42,8 @@ struct Sload
     evmc_bytes32 key;
 };
 
-
 using SymbolicStackItem =
-        std::variant<uint256, Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<uint256, Sload, Slice, UnaryOp, BinaryOp, TernaryOp, Keccak256>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 
@@ -84,10 +84,18 @@ struct Slice8 {
     }
 };
 
+uint8_t slice8(uint256&, uint8_t);
+
 struct Slice {
     Slice8 word[32];
 };
 
+
+struct Keccak256
+{
+    std::unique_ptr<Slice8[]> data;
+    size_t size;
+};
 
 enum class UnOp { iszero, not_ };
 std::ostream& operator<< (std::ostream&, const UnOp&);
@@ -98,7 +106,7 @@ struct UnaryOp
     SymbolicStackItemPtr first;
 };
 
-enum class BinOp { add, mul, sub, div, sdiv, mod, smod, exp, signextend, lt, gt, slt, sgt, eq, and_, or_, xor_, byte, shl, shr, sar, keccak256 };
+enum class BinOp { add, mul, sub, div, sdiv, mod, smod, exp, signextend, lt, gt, slt, sgt, eq, and_, or_, xor_, byte, shl, shr, sar };
 std::ostream& operator<< (std::ostream&, const BinOp&);
 
 struct BinaryOp
@@ -238,39 +246,35 @@ struct NotEqual;
 struct LessEqual;
 struct Greater;
 
-using SymbolicRequirement =
-        std::variant<Equal, NotEqual, LessEqual, Greater>;
 
-std::ostream& operator<<(std::ostream& os, const SymbolicRequirement& i);
+enum class Req { equal, notEqual, lessEqual, greater };
 
-
-struct Equal
+struct SymbolicRequirement
 {
+    Req op;
     SymbolicStackItemPtr sval;
     uint256 val;
+    std::ostream& operator<<(std::ostream& os) {
+        switch (op)
+        {
+        case Req::equal:
+            os << *sval << " == 0x" << intx::hex(val);
+            break;
+        case Req::notEqual:
+            os << *sval << " != 0x" << intx::hex(val);
+            break;
+        case Req::lessEqual:
+            os << *sval << " <= 0x" << intx::hex(val);
+            break;
+        case Req::greater:
+            os << *sval << " > 0x" << intx::hex(val);
+            break;
+        }
+        return os;
+    }
 };
 
-struct NotEqual
-{
-    SymbolicStackItemPtr sval;
-    uint256 val;
-};
 
-struct LessEqual
-{
-    SymbolicStackItemPtr sval;
-    uint256 val;
-};
-
-struct Greater
-{
-    SymbolicStackItemPtr sval;
-    uint256 val;
-};
-
-// uint256 eval_SymbolicStackItem(SymbolicStackItemPtr);
-
-// using StorageMap = std::map<evmc::bytes32, evmc::bytes32>;
-// StorageMap eval_SymbolicStorage(StorageMap, SymbolicStoragePtr);
+bool eval(std::function<evmc_bytes32(evmc_bytes32&)>, std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>>);
 
 }
