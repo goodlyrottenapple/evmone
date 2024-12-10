@@ -36,10 +36,6 @@ struct MapComparatorEvmcAddress
     }
 };
 
-
-using PlainMemoryPtr = std::shared_ptr<uint8_t[]>;
-
-// using Sload = Load<SymbolicStoragePtr>;
 struct Sload 
 {
     evmc_bytes32 key;
@@ -47,7 +43,7 @@ struct Sload
 
 
 using SymbolicStackItem =
-        std::variant<Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
+        std::variant<uint256, Sload, Slice, UnaryOp, BinaryOp, TernaryOp>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 
@@ -146,13 +142,13 @@ struct StackItem<true> {
 
     inline static bool is_symbolic(const SymbolicStackItemPtr& sval)
     {
-        if(sval) return true;
+        if(sval) return !std::holds_alternative<uint256>(*sval);
         else return false;
     }
 
     inline static bool is_pure(const SymbolicStackItemPtr& sval)
     {
-        if(sval) return false;
+        if(sval) return std::holds_alternative<uint256>(*sval);
         else return true;
     }
 
@@ -161,50 +157,78 @@ struct StackItem<true> {
         sval = rc_ptr<SymbolicStackItem>();
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, Sload&& si)
+    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc_bytes32 key)
     {
         
-        if (auto search = storage->find(si.key); search != storage->end())
+        if (auto search = storage->find(key); search != storage->end())
         {
-            sval = search->second;
+            assert(search->second != nullptr);
+            if (is_pure(search->second))
+            {
+                assert(val == std::get<uint256>(*search->second));
+                set_pure();
+            }
+            else sval = search->second;
         }
         else
         {
-            if (sval.counter() == 1) *sval = si;
-            else sval = make_symbolic(arena, si);
-        }
-    }
-
-    inline void set_symbolic(ArenaAllocator& arena, UnaryOp&& si)
-    {
-        if (is_pure(si.first)) 
-            set_pure();
-        else
-        {
-            if (sval.counter() == 1) *sval = si;
-            else sval = make_symbolic(arena, si);
+            if (sval.counter() == 1) *sval = Sload {key};
+            else sval = make_symbolic(arena, Sload {key});
         }
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, BinaryOp&& si)
+    inline void set_symbolic(ArenaAllocator& arena, UnOp&& op, StackItem& first)
     {
-        if (is_pure(si.first) && is_pure(si.second))
+        if (is_pure(first.sval)) 
             set_pure();
         else
         {
-            if (sval.counter() == 1) *sval = si;
-            else sval = make_symbolic(arena, si);
+            if (sval.counter() == 1) *sval = UnaryOp {op, make_symbolic(arena, first.val)};
+            else sval = make_symbolic(arena, UnaryOp {op, make_symbolic(arena, first.val)});
         }
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, TernaryOp&& si)
+    inline void set_symbolic(ArenaAllocator& arena, BinOp&& op, StackItem& first, StackItem& second)
     {
-        if (is_pure(si.first) && is_pure(si.second) && is_pure(si.third))
+        if (is_pure(first.sval) && is_pure(first.sval))
             set_pure();
         else
         {
-            if (sval.counter() == 1) *sval = si;
-            else sval = make_symbolic(arena, si);
+            if (sval.counter() == 1) 
+                *sval = 
+                    BinaryOp {
+                        op, 
+                        is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
+                        is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval
+                    };
+            else sval = make_symbolic(arena, BinaryOp {
+                        op, 
+                        is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
+                        is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval
+                    });
+        }
+    }
+
+    inline void set_symbolic(ArenaAllocator& arena, TernOp&& op,  StackItem& first, StackItem& second, StackItem& third)
+    {
+        if (is_pure(first.sval) && is_pure(second.sval) && is_pure(third.sval))
+            set_pure();
+        else
+        {
+            if (sval.counter() == 1) 
+                *sval = 
+                    TernaryOp {
+                        op, 
+                        is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
+                        is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval,
+                        is_pure(third.sval) ? make_symbolic(arena, third.val) : third.sval
+                    };
+            else sval = make_symbolic(arena, TernaryOp {
+                        op, 
+                        is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
+                        is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval,
+                        is_pure(third.sval) ? make_symbolic(arena, third.val) : third.sval
+                    });
         }
     }
 };

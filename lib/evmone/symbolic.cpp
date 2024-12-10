@@ -58,6 +58,7 @@ std::ostream& operator<< (std::ostream& os, const TernOp& op)
 
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     std::visit(Cases{
+        [&](const uint256& i) { os << "0x" << intx::hex(i); },
         [&](const Sload&) { os << "LOAD(" << "???" 
             // intx::hex(i.key) 
             << ")"; },

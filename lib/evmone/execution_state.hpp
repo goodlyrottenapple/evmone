@@ -489,9 +489,10 @@ public:
         else return StackItem<true>::make_symbolic(*arena, symbolic);
     }
 
-    inline void update_tstore(evmc_bytes32 k, SymbolicStackItemPtr v)
+    inline void update_tstore(evmc_bytes32 k, StackItem<isSymbolic> v)
     {
-        (*tstore)[k] = v;
+        if(StackItem<isSymbolic>::is_symbolic(v.sval)) (*tstore)[k] = StackItem<isSymbolic>::make_symbolic(*arena, v.val);
+        else (*tstore)[k] = v.sval;
     }
 
     inline void reset_tstore() noexcept
@@ -511,9 +512,10 @@ public:
             store = new SymbolicStorage(MapComparatorEvmcBytes32 {});
     }
 
-    inline void update_store(evmc_bytes32 k, SymbolicStackItemPtr v)
+    inline void update_store(evmc_bytes32 k, StackItem<isSymbolic> v)
     {
-        (*store)[k] = v;
+        if(StackItem<isSymbolic>::is_pure(v.sval)) (*store)[k] = StackItem<isSymbolic>::make_symbolic(*arena, v.val);
+        else (*store)[k] = v.sval;
     }
 };
 
