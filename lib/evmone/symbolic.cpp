@@ -78,23 +78,7 @@ std::ostream& operator<<(std::ostream& os, const Offset& i)
 uint8_t slice8(uint256& x, uint8_t idx)
 {
     assert(idx < 32);
-    if(idx<8)
-    {
-        const auto v3 = intx::to_big_endian(x[3]);
-        return *reinterpret_cast<uint8_t(*)[sizeof(uint64_t)]>(v3)[idx];
-    }
-    if(idx<16)
-    {
-        const auto v2 = intx::to_big_endian(x[2]);
-        return *reinterpret_cast<uint8_t(*)[sizeof(uint64_t)]>(v2)[idx-8];
-    }
-    if(idx<24)
-    {
-        const auto v1 = intx::to_big_endian(x[1]);
-        return *reinterpret_cast<uint8_t(*)[sizeof(uint64_t)]>(v1)[idx-16];
-    }
-    const auto v0 = intx::to_big_endian(x[0]);
-    return *reinterpret_cast<uint8_t(*)[sizeof(uint64_t)]>(v0)[idx-24];
+    return intx::as_bytes(x)[idx];
 }
 
 
