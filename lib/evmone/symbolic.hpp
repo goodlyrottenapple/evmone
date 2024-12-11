@@ -27,16 +27,6 @@ struct SetMem;
 struct Keccak256;
 
 
-struct MapComparatorEvmcAddress
-{
-    bool operator()( const evmc_address& a, const evmc_address& b) const 
-    {
-        if ((uint64_t)a.bytes[0] < (uint64_t)b.bytes[0]) return true;
-        if ((uint64_t)a.bytes[8] < (uint64_t)b.bytes[8]) return true;
-        return (uint32_t)a.bytes[16] < (uint32_t)b.bytes[16];
-    }
-};
-
 struct Sload 
 {
     evmc_bytes32 key;
@@ -46,22 +36,11 @@ using SymbolicStackItem =
         std::variant<uint256, Sload, Slice, UnaryOp, BinaryOp, TernaryOp, Keccak256>;
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
-
-struct MapComparatorEvmcBytes32
-{
-    bool operator()( const evmc_bytes32& a, const evmc_bytes32& b) const 
-    {
-        if ((uint64_t)a.bytes[0] < (uint64_t)b.bytes[0]) return true;
-        if ((uint64_t)a.bytes[8] < (uint64_t)b.bytes[8]) return true;
-        return (uint32_t)a.bytes[16] < (uint32_t)b.bytes[16];
-    }
-};
-
-using SymbolicStorage = std::map<evmc_bytes32, SymbolicStackItemPtr, MapComparatorEvmcBytes32>;
+using SymbolicStorage = std::unordered_map<evmc::bytes32, SymbolicStackItemPtr>;
 using SymbolicStoragePtr = SymbolicStorage*;
 
 
-using SymbolicStorageMap = std::map<evmc_address, SymbolicStoragePtr, MapComparatorEvmcAddress>;
+using SymbolicStorageMap = std::unordered_map<evmc::address, SymbolicStoragePtr>;
 
 
 
@@ -165,23 +144,25 @@ struct StackItem<true> {
         sval = rc_ptr<SymbolicStackItem>();
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc_bytes32 key)
+    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc_bytes32 key, bool is_tload = false)
     {
         
         if (auto search = storage->find(key); search != storage->end())
         {
-            assert(search->second != nullptr);
-            if (is_pure(search->second))
-            {
-                assert(val == std::get<uint256>(*search->second));
-                set_pure();
-            }
-            else sval = search->second;
+            sval = search->second;
         }
         else
         {
-            if (sval.counter() == 1) *sval = Sload {key};
-            else sval = make_symbolic(arena, Sload {key});
+            if (is_tload)
+            {
+                assert(val == 0);
+                set_pure();
+            }
+            else
+            {
+                if(sval.counter() == 1) *sval = Sload {key};
+                else sval = make_symbolic(arena, Sload {key});
+            }
         }
     }
 

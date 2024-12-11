@@ -926,8 +926,9 @@ inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
     if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    index.val = intx::be::unsafe::load<uint256>(&state.memory[static_cast<size_t>(index.val)]);
-    if constexpr (isSymbolic) index.sval = state.symbolic.load_memory(static_cast<size_t>(index.val));
+    auto idx = static_cast<size_t>(index.val);
+    index.val = intx::be::unsafe::load<uint256>(&state.memory[idx]);
+    if constexpr (isSymbolic) index.sval = state.symbolic.load_memory(idx);
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -1090,9 +1091,8 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     auto& x = stack[0];
     const auto key = intx::be::store<evmc::bytes32>(x.val);
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
-
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.tstore, key);
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.tstore, key, true);
 }
 
 template <bool isSymbolic> 

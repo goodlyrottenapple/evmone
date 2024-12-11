@@ -324,6 +324,7 @@ public:
 
     SymbolicRequirementsPtr requirements = nullptr;
     SymbolicStorageMapPtr modified_stores = nullptr;
+    SymbolicStorageMapPtr tstores = nullptr;
     SymbolicStoragePtr store = nullptr;
     SymbolicMemory<isSymbolic> memory;
     SymbolicStoragePtr tstore = nullptr;
@@ -347,16 +348,22 @@ public:
             requirements->push_back(SymbolicRequirement{Req::equal,i.sval, i.val});
     }
 
-    inline void set_requirements(bool reset)
+    inline void set_requirements()
     {
         if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
-        if(reset) requirements->clear();
+        else requirements->clear();
     }
 
-    inline void set_modified_stores(bool reset)
+    inline void set_modified_stores()
     {
-        if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap(MapComparatorEvmcAddress {}));
-        if(reset) modified_stores->clear();
+        if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap());
+        else modified_stores->clear();
+    }
+
+    inline void set_tstores()
+    {
+        if(!tstores) tstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap());
+        else tstores->clear();
     }
 
     static inline void reset_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
@@ -502,13 +509,7 @@ public:
 
     inline void update_tstore(evmc_bytes32 k, StackItem<isSymbolic> v)
     {
-        if(StackItem<isSymbolic>::is_symbolic(v.sval)) (*tstore)[k] = StackItem<isSymbolic>::make_symbolic(*arena, v.val);
-        else (*tstore)[k] = v.sval;
-    }
-
-    inline void reset_tstore() noexcept
-    {
-        tstore = nullptr;
+        (*tstore)[k] = v.sval;
     }
 
     // set up the symbolic store by looking up any previous symbolic state at the recipient address,
@@ -519,8 +520,26 @@ public:
         {
             store = search->second;
         }
-        else 
-            store = new SymbolicStorage(MapComparatorEvmcBytes32 {});
+        else
+        {
+            store = new SymbolicStorage();
+            (*modified_stores)[init] = store;
+        }
+    }
+
+    // set up the symbolic tstore by looking up any previous symbolic state at the recipient address,
+    // in case we are in a nested context
+    inline void set_tstore(evmc_address init)
+    {
+        if (auto search = tstores->find(init); search != tstores->end())
+        {
+            tstore = search->second;
+        }
+        else
+        {
+            tstore = new SymbolicStorage();
+            (*tstores)[init] = tstore;
+        }
     }
 
     inline void update_store(evmc_bytes32 k, StackItem<isSymbolic> v)
