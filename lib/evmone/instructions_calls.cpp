@@ -70,6 +70,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         // if we are calling a precompile, the call is opaque and we cannot perform any analysis on data that is dependend on storage access
         if(calling_precompile)
         {
+            const auto current_memory_size = state.memory.size();
             bool current_all_concrete = true;
             uint8_t concrete_data[32];
             memset(concrete_data, 0, sizeof(concrete_data));
@@ -90,7 +91,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                 symbolic_data.word[current_index] = state.symbolic.memory[i+input_offset].get_symbolic();
 
                 i++;
-                if(i%32 == 0) 
+                if(i%32 == 0 || i+input_offset+1 == std::min(current_memory_size, input_offset+input_size)) 
                 {
                     if(!current_all_concrete)
                         state.symbolic.requirements->push_back(
@@ -106,7 +107,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                         symbolic_data.word[j] = Slice8 {SymbolicStackItemPtr(), 0};
                     }
                 }
-            } while (i < input_size);
+            } while (i+input_offset < std::min(current_memory_size, input_offset+input_size));
         }
         
     }
@@ -215,8 +216,12 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
         if constexpr (isSymbolic)
-            if (state.child != nullptr)
+        {
+            if(calling_precompile)
+                state.symbolic.update_memory(output_offset, copy_size, (uint8_t*)result.output_data);
+            else
                 state.symbolic.update_memory(output_offset, copy_size, state.child->symbolic.memory.data());
+        }
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
@@ -414,9 +419,6 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         // init_code_offset may be garbage if init_code_size == 0.
         msg.input_data = &state.memory[init_code_offset];
         msg.input_size = init_code_size;
-        if constexpr (isSymbolic) 
-            if (state.child != nullptr)
-                state.child->symbolic.set_calldata(init_code_offset, init_code_size, state.symbolic.memory.data());
         if (state.rev >= EVMC_PRAGUE)
         {
             // EOF initcode is not allowed for legacy creation
@@ -424,6 +426,13 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
                 return {EVMC_SUCCESS, gas_left};  // "Light" failure.
         }
     }
+    if constexpr (isSymbolic) 
+        if (state.child != nullptr)
+            // internally, the host strips the input_size and input_data from this message
+            // and passes them via the code and code_size in
+            // evmc_result execute(evmc_vm* c_vm, const evmc_host_interface* host, ... const uint8_t* code, size_t code_size)
+            // feels VERY hacky
+            state.child->symbolic.set_calldata(init_code_offset, 0, nullptr);
     msg.sender = state.msg->recipient;
     msg.depth = state.msg->depth + 1;
     msg.create2_salt = intx::be::store<evmc::bytes32>(has_salt ? msalt.value().val : uint256{});

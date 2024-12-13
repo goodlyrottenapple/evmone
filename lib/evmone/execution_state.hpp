@@ -164,7 +164,7 @@ public:
 
 class SymbolicMemoryLocation
 {
-private:
+public:
     // symbolic = nullptr means the memory location has a concrete value stored in concrete_or_offset
     // otherwise concrete_or_offset an ofset of 0 to 31 bytes into the symbolic value
     rc_ptr_data<SymbolicStackItem>* symbolic;
@@ -253,21 +253,16 @@ class SymbolicMemory
 
     [[noreturn, gnu::cold]] static void handle_out_of_memory() noexcept { std::terminate(); }
 
-    void allocate_capacity(bool init = false) noexcept
+    void allocate_capacity() noexcept
     {
         m_data.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(m_data.release(), sizeof(SymbolicMemoryLocation) * m_capacity)));
         if (!m_data) [[unlikely]]
             handle_out_of_memory();
-        if (init)
-            for (size_t i = 0; i < m_capacity; i++)
-            {
-                m_data[i].zero(true);
-            }
     }
 
 public:
     /// Creates Memory object with initial capacity allocation.
-    SymbolicMemory() noexcept { if constexpr (isSymbolic) allocate_capacity(true); }
+    SymbolicMemory() noexcept { if constexpr (isSymbolic) allocate_capacity(); }
 
     SymbolicMemoryLocation& operator[](size_t index) noexcept { return m_data[index]; }
 
