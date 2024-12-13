@@ -595,7 +595,7 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         if constexpr (isSymbolic)
         {
             assert(state.msg->input_size == state.symbolic.calldata_size);
-            state.symbolic.update_memory(dst, 0, copy_size, state.symbolic.calldata);
+            state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata[src]);
         }
     }        
 
@@ -640,7 +640,7 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
         std::memcpy(&state.memory[dst], &state.original_code[src], copy_size);
 
         if constexpr (isSymbolic)
-            state.symbolic.update_memory(dst, copy_size, &state.original_code[src]);
+            state.symbolic.update_memory(dst, copy_size, (uint8_t*)(&state.original_code[src]));
     }
     if (s - copy_size > 0)
     {
@@ -730,23 +730,13 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
         const auto dst = static_cast<size_t>(mem_index.val);
         const auto num_bytes_copied = state.host.copy_code(addr, src, &state.memory[dst], s);
 
-        if constexpr (isSymbolic) {
-            assert(state.symbolic.requirements != nullptr);
-            if (StackItem<true>::is_symbolic(size.sval))
-                state.symbolic.requirements->push_back(SymbolicRequirement{ Req::greater, size.sval, 0});
-        }
+        if constexpr (isSymbolic)
+            state.symbolic.update_memory(dst, s, &state.memory[dst]);
 
         if (const auto num_bytes_to_clear = s - num_bytes_copied; num_bytes_to_clear > 0)
         {
             std::memset(&state.memory[dst + num_bytes_copied], 0, num_bytes_to_clear);
             if constexpr (isSymbolic) state.symbolic.reset_memory(dst + num_bytes_copied, num_bytes_to_clear);
-        }
-        else 
-        {
-            if constexpr (isSymbolic)
-                // the host call to `copy_code` succeeded, hence we need to make an immutable copy of the data and overlay it onto
-                // symbolic memory at the correct index
-                state.symbolic.update_memory(dst, s, &state.memory[dst]);
         }
     }
     return {EVMC_SUCCESS, gas_left};
@@ -756,6 +746,7 @@ template <bool isSymbolic>
 inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     // unsupported by monad atm
+    if constexpr (isSymbolic) assert(false);
     auto& index = stack[0];
 
     if (state.return_data.size() < index.val)
@@ -797,6 +788,8 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
 
     if (is_eof_container(state.original_code))
     {
+        // unsupported by monad atm
+        if constexpr (isSymbolic) assert(false);
         auto src = state.return_data.size() < input_index.val ? state.return_data.size() :
                                                             static_cast<size_t>(input_index.val);
         auto copy_size = std::min(s, state.return_data.size() - src);
@@ -828,7 +821,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
 
             if constexpr (isSymbolic) {
                 assert(state.return_data.size() == state.symbolic.returndata_size);
-                state.symbolic.update_memory(dst, src, s, state.symbolic.returndata);
+                state.symbolic.update_memory(dst, s, &state.symbolic.returndata[src]);
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
             }
@@ -945,7 +938,7 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
     if constexpr (isSymbolic)
     {
-        if(StackItem<true>::is_pure(value.sval)) {
+        if(value.is_pure()) {
             for (size_t i = 0; i < 32; i++)
             {
                 state.symbolic.memory[static_cast<size_t>(index.val)+i] = state.memory[static_cast<size_t>(index.val)+i];
@@ -955,7 +948,7 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
         {
             for (size_t i = 0; i < 32; i++)
             {
-                state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, (uint8_t)i};
+                state.symbolic.memory[static_cast<size_t>(index.val)+i] = Slice8 {value.sval, (uint8_t)i};
             }
         }
     }
@@ -975,7 +968,7 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
     if constexpr (isSymbolic)
     {
-        if(StackItem<true>::is_pure(value.sval)) state.symbolic.memory[static_cast<size_t>(index.val)] = state.memory[static_cast<size_t>(index.val)];
+        if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)] = state.memory[static_cast<size_t>(index.val)];
         else state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, 31};
     }
     return {EVMC_SUCCESS, gas_left};
@@ -1329,9 +1322,17 @@ inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
         return {EVMC_OUT_OF_GAS, gas_left};
 
     if (size > 0)
+    {
         std::memmove(&state.memory[dst], &state.memory[src], size);
-
-    // update symbolic memory
+        if constexpr (isSymbolic)
+        {
+            for (size_t i = 0; i < size; i++)
+            {
+                state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
+                state.symbolic.memory[src+i].zero();
+            }
+        }
+    }
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -1377,6 +1378,7 @@ template <bool isSymbolic>
 inline Result datacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     // unsupported by monad atm
+    if constexpr (isSymbolic) assert(false);
     const auto data = state.analysis.baseline->eof_data();
     const auto& mem_index = stack[0];
     const auto& data_index = stack[1];
@@ -1545,6 +1547,8 @@ template <bool isSymbolic>
 inline TermResult returncontract(
     StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
+    // unsupported by monad atm
+    if constexpr (isSymbolic) assert(false);
     const auto& offset = stack[0];
     const auto& size = stack[1];
     if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(offset, size);

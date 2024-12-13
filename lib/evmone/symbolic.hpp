@@ -139,6 +139,20 @@ struct StackItem<true> {
         else return true;
     }
 
+    inline bool is_pure() const
+    {
+        if(sval) 
+        {
+            if (std::holds_alternative<uint256>(*sval))
+            {
+                assert(val == std::get<uint256>(*sval));
+                return true;
+            }
+            else return false;
+        }
+        else return true;
+    }
+
     inline void set_pure()
     {
         sval = rc_ptr<SymbolicStackItem>();

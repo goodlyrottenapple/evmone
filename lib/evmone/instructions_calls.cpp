@@ -57,9 +57,58 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     const auto input_size_u256 = stack.popStackItem();
     const auto output_offset_u256 = stack.popStackItem();
     const auto output_size_u256 = stack.popStackItem();
+    static constexpr evmc::address precompile_address_boundary{0x13};
+    bool calling_precompile = dst <= precompile_address_boundary;
+
+    const auto input_offset = static_cast<size_t>(input_offset_u256.val);
+    const auto input_size = static_cast<size_t>(input_size_u256.val);
+
     if constexpr (isSymbolic) {
         state.symbolic.symbolic_value_matches_concrete(gas, dstStackItem, input_offset_u256, input_size_u256, output_offset_u256, output_size_u256);
         if (mvalue.has_value()) state.symbolic.symbolic_value_matches_concrete(mvalue.value());
+
+        // if we are calling a precompile, the call is opaque and we cannot perform any analysis on data that is dependend on storage access
+        if(calling_precompile)
+        {
+            bool current_all_concrete = true;
+            uint8_t concrete_data[32];
+            memset(concrete_data, 0, sizeof(concrete_data));
+            Slice symbolic_data;
+            for (size_t i = 0; i < 32; i++)
+            {
+                symbolic_data.word[i] = Slice8 {SymbolicStackItemPtr(), 0};
+            }
+            
+            size_t i = 0;
+            do {
+                auto current_index = i % 32;
+                concrete_data[current_index] = state.memory[i+input_offset];
+                if(state.symbolic.memory[i+input_offset].is_conrete())
+                    assert(state.memory[i+input_offset] == state.symbolic.memory[i+input_offset].get_concrete());
+                else 
+                    current_all_concrete = false;
+                symbolic_data.word[current_index] = state.symbolic.memory[i+input_offset].get_symbolic();
+
+                i++;
+                if(i%32 == 0) 
+                {
+                    if(!current_all_concrete)
+                        state.symbolic.requirements->push_back(
+                            SymbolicRequirement{
+                                Req::equal, 
+                                StackItem<isSymbolic>::make_symbolic(*stack.arena, symbolic_data), 
+                                intx::be::unsafe::load<uint256>(concrete_data) 
+                            });
+                    current_all_concrete = true;
+                    memset(concrete_data, 0, sizeof(concrete_data));
+                    for (size_t j = 0; j < 32; j++)
+                    {
+                        symbolic_data.word[j] = Slice8 {SymbolicStackItemPtr(), 0};
+                    }
+                }
+            } while (i < input_size);
+        }
+        
     }
 
     stack.push(0);  // Assume failure.
@@ -78,8 +127,6 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, output_offset_u256.val, output_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    const auto input_offset = static_cast<size_t>(input_offset_u256.val);
-    const auto input_size = static_cast<size_t>(input_size_u256.val);
     const auto output_offset = static_cast<size_t>(output_offset_u256.val);
     const auto output_size = static_cast<size_t>(output_size_u256.val);
 
@@ -102,11 +149,10 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         // input_offset may be garbage if input_size == 0.
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
-
-        if constexpr (isSymbolic) 
-            if (state.child != nullptr)
-                state.child->symbolic.set_calldata(input_offset, input_size, state.symbolic.memory.data());
     }
+    if constexpr (isSymbolic) 
+        if (state.child != nullptr)
+            state.child->symbolic.set_calldata(input_offset, input_size, state.symbolic.memory.data());
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
 
@@ -148,10 +194,20 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
     if constexpr (isSymbolic)
     {
-        if (state.child && state.child->output_size != 0)
-            state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
-        else
-            state.symbolic.set_returndata(0, 0, nullptr);
+        if(calling_precompile)
+        {
+            state.symbolic.set_returndata(output_offset, result.output_size, result.output_data);
+        }
+        else 
+        {
+            if (state.child && state.child->output_size != 0)
+            {
+                assert(state.child->output_size == result.output_size);
+                state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
+            }
+            else
+                state.symbolic.set_returndata(0, 0, (uint8_t*)nullptr);
+        }
     }
     stack.top() = result.status_code == EVMC_SUCCESS;
 
@@ -160,7 +216,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
         if constexpr (isSymbolic)
             if (state.child != nullptr)
-                state.symbolic.update_memory(output_offset, copy_size, &state.child->symbolic.memory);
+                state.symbolic.update_memory(output_offset, copy_size, state.child->symbolic.memory.data());
     }
     const auto gas_used = msg.gas - result.gas_left;
     gas_left -= gas_used;
@@ -385,7 +441,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         if (state.child && state.child->output_size != 0)
             state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
         else
-            state.symbolic.set_returndata(0, 0, nullptr);
+            state.symbolic.set_returndata(0, 0, (uint8_t*)nullptr);
     }
 
 

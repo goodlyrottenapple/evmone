@@ -322,6 +322,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
 
             SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
             state.symbolic.calldata_size = state.msg->input_size;
+            // TODO could this be leaking if calldata was set before??
             state.symbolic.calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(state.symbolic.calldata.release(), sizeof(SymbolicMemoryLocation) * state.symbolic.calldata_size)));
             for (size_t i = 0; i < state.msg->input_size; i++)
             {
@@ -347,6 +348,9 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             state.child->symbolic.tstores = state.symbolic.tstores;
             assert(state.symbolic.requirements != nullptr);
             state.child->symbolic.requirements = state.symbolic.requirements;
+
+            state.child->symbolic.calldata_size = 0;
+            state.child->symbolic.calldata = nullptr;
         }
 
         state.symbolic.set_store(msg.recipient);

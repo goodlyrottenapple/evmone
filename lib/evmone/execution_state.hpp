@@ -154,7 +154,10 @@ public:
     }
 
     /// Virtually clears the memory by setting its size to 0. The capacity stays unchanged.
-    void clear() noexcept { m_size = 0; }
+    void clear() noexcept { 
+        // std::memset(m_data.get(), 0, m_size);
+        m_size = 0; 
+    }
 };
 
 
@@ -198,7 +201,7 @@ public:
         if(o.symbolic.raw() != nullptr)
         {
             assert(o.concrete_or_offset < 32);
-            assert(!StackItem<true>::is_pure(o.symbolic));
+            assert(StackItem<true>::is_symbolic(o.symbolic));
             concrete_or_offset = o.concrete_or_offset;
             symbolic = o.symbolic.raw();
             rc_ptr<SymbolicStackItem>::acquire(symbolic);
@@ -268,7 +271,7 @@ public:
 
     SymbolicMemoryLocation& operator[](size_t index) noexcept { return m_data[index]; }
 
-    [[nodiscard]] const SymbolicMemoryLocation* data() const noexcept { return m_data.get(); }
+    [[nodiscard]] SymbolicMemoryLocation* data() const noexcept { return m_data.get(); }
     [[nodiscard]] size_t size() const noexcept { return m_size; }
 
     /// Grows the memory to the given size. The extent is filled with zeros.
@@ -304,13 +307,8 @@ public:
     /// Virtually clears the memory by setting its size to 0. The capacity stays unchanged.
     void clear() noexcept
     {
-        for (size_t i = 0; i < m_capacity; i++)
-        {
-            m_data[i].zero();
-        }
         m_size = 0;
     }
-
 };
 
 
@@ -384,7 +382,7 @@ public:
 
     inline void set_calldata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
     {
-        reset_symbolic_memory_ptr(calldata.get(), calldata_size);
+        if(calldata) reset_symbolic_memory_ptr(calldata.get(), calldata_size);
         calldata_size = size;
         calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(calldata.release(), sizeof(SymbolicMemoryLocation) * size)));
         std::memcpy(calldata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
@@ -426,7 +424,7 @@ public:
 
     inline void set_returndata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
     {
-        reset_symbolic_memory_ptr(returndata.get(), returndata_size);
+        if(returndata) reset_symbolic_memory_ptr(returndata.get(), returndata_size);
         returndata_size = size;
         if(size > 0)
         {
@@ -437,19 +435,35 @@ public:
         else returndata = nullptr;
     }
 
-    inline void update_memory(size_t dst, size_t src, size_t size, SymbolicMemoryPtr& m)
+    inline void set_returndata(size_t offset, size_t size, const uint8_t* m)
+    {
+        if(returndata) reset_symbolic_memory_ptr(returndata.get(), returndata_size);
+        returndata_size = size;
+        if(size > 0)
+        {
+            returndata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(returndata.release(), sizeof(SymbolicMemoryLocation) * size)));
+            for (size_t i = 0; i < size; i++)
+            {
+                returndata[i].zero(true);
+                returndata[i] = m[i+offset];
+            }
+        }
+        else returndata = nullptr;
+    }
+
+    inline void update_memory(size_t dst, size_t size, SymbolicMemoryLocation* m)
     {
         reset_symbolic_memory_ptr(&memory[dst], size);
-        std::memcpy(&memory[dst], &m[src], sizeof(SymbolicMemoryLocation) * size);
-        acquire_symbolic_memory_ptr(&m[src], size);
+        std::memcpy(&memory[dst], m, sizeof(SymbolicMemoryLocation) * size);
+        acquire_symbolic_memory_ptr(m, size);
     }
 
 
-    inline void update_memory(size_t dst, size_t s, const void* ptr)
+    inline void update_memory(size_t dst, size_t s, uint8_t* ptr)
     {
         for (size_t i = 0; i < s; i++)
         {
-            memory[dst+i] = ((uint8_t*)ptr)[i];
+            memory[dst+i] = ptr[i];
         }
     }
 
@@ -544,7 +558,7 @@ public:
 
     inline void update_store(evmc_bytes32 k, StackItem<isSymbolic> v)
     {
-        if(StackItem<isSymbolic>::is_pure(v.sval)) (*store)[k] = StackItem<isSymbolic>::make_symbolic(*arena, v.val);
+        if(v.is_pure()) (*store)[k] = StackItem<isSymbolic>::make_symbolic(*arena, v.val);
         else (*store)[k] = v.sval;
     }
 };
