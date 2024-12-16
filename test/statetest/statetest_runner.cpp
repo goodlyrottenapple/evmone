@@ -6,10 +6,11 @@
 #include "../state/rlp.hpp"
 #include "statetest.hpp"
 #include <gtest/gtest.h>
+#include <evmone/vm.hpp>
 
 namespace evmone::test
 {
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary)
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic)
 {
     SCOPED_TRACE(test.name);
     for (const auto& [rev, cases] : test.cases)
@@ -64,6 +65,10 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             }
 
             EXPECT_EQ(state_root, expected.state_hash);
+            if (symbolic)
+            {
+                ((evmone::VM<true>&)vm).compute_symbolic([&tx, &test](auto& k) { return test.pre_state.get_storage(tx.sender, k); });
+            }
         }
     }
 }

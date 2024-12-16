@@ -107,22 +107,6 @@ VM<true>::VM() noexcept
 {
     m_execution_states.reserve(1025);
 }
-
-template <bool isSymbolic>
-ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size_t depth) noexcept
-{
-    // Vector already has the capacity for all possible depths,
-    // so reallocation never happens (therefore: noexcept).
-    // The ExecutionStates are lazily created because they pre-allocate EVM memory and stack.
-    assert(depth < m_execution_states.capacity());
-    if (m_execution_states.size() <= depth)
-        m_execution_states.resize(depth + 1);
-    return m_execution_states[depth];
-}
-
-template ExecutionState<true>& VM<true>::get_execution_state(size_t depth) noexcept;
-template ExecutionState<false>& VM<false>::get_execution_state(size_t depth) noexcept;
-
 }  // namespace evmone
 
 extern "C" {
