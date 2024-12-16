@@ -341,22 +341,22 @@ public:
             requirements->push_back(SymbolicRequirement{Req::equal,i.sval, i.val});
     }
 
-    inline void set_requirements()
+    inline void set_requirements(bool reset)
     {
         if(!requirements) requirements = std::make_shared<std::vector<SymbolicRequirement>>();
-        else requirements->clear();
+        if(reset) requirements->clear();
     }
 
-    inline void set_modified_stores()
+    inline void set_modified_stores(bool reset)
     {
         if(!modified_stores) modified_stores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap());
-        else modified_stores->clear();
+        if(reset) modified_stores->clear();
     }
 
-    inline void set_tstores()
+    inline void set_tstores(bool reset)
     {
         if(!tstores) tstores = std::make_shared<SymbolicStorageMap>(SymbolicStorageMap());
-        else tstores->clear();
+        if(reset) tstores->clear();
     }
 
     static inline void reset_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
@@ -525,6 +525,7 @@ public:
     // in case we are in a nested context
     inline void set_store(evmc_address init)
     {
+        assert(modified_stores != nullptr);
         if (auto search = modified_stores->find(init); search != modified_stores->end())
         {
             store = search->second;

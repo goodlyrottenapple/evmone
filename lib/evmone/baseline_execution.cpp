@@ -311,15 +311,14 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     state.reset(msg, rev, host, ctx, analysis.raw_code());
     if constexpr (isSymbolic){
         state.symbolic.arena = state.arena;
+        state.symbolic.set_modified_stores(msg.depth == 0);
+        state.symbolic.set_tstores(msg.depth == 0);
+        state.symbolic.set_requirements(msg.depth == 0);
 
         // only reset the symbolic calldata and returndata state if this is a 0 depth call.
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
         if(msg.depth == 0)
         {
-            state.symbolic.set_requirements();
-            state.symbolic.set_modified_stores();
-            state.symbolic.set_tstores();
-
             SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
             state.symbolic.calldata_size = state.msg->input_size;
             // TODO could this be leaking if calldata was set before??

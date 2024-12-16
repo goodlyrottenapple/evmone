@@ -745,8 +745,6 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
 template <bool isSymbolic> 
 inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
-    // unsupported by monad atm
-    if constexpr (isSymbolic) assert(false);
     auto& index = stack[0];
 
     if (state.return_data.size() < index.val)
@@ -788,8 +786,6 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
 
     if (is_eof_container(state.original_code))
     {
-        // unsupported by monad atm
-        if constexpr (isSymbolic) assert(false);
         auto src = state.return_data.size() < input_index.val ? state.return_data.size() :
                                                             static_cast<size_t>(input_index.val);
         auto copy_size = std::min(s, state.return_data.size() - src);
@@ -1377,8 +1373,6 @@ inline code_iterator dataloadn(StackTop<isSymbolic> stack, ExecutionState<isSymb
 template <bool isSymbolic> 
 inline Result datacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
-    // unsupported by monad atm
-    if constexpr (isSymbolic) assert(false);
     const auto data = state.analysis.baseline->eof_data();
     const auto& mem_index = stack[0];
     const auto& data_index = stack[1];

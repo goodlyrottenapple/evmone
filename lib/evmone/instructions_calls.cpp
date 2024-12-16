@@ -81,7 +81,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
             }
             
             size_t i = 0;
-            do {
+            while (i+input_offset < std::min(current_memory_size, input_offset+input_size)) {
                 auto current_index = i % 32;
                 concrete_data[current_index] = state.memory[i+input_offset];
                 if(state.symbolic.memory[i+input_offset].is_conrete())
@@ -107,7 +107,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                         symbolic_data.word[j] = Slice8 {SymbolicStackItemPtr(), 0};
                     }
                 }
-            } while (i+input_offset < std::min(current_memory_size, input_offset+input_size));
+            }
         }
         
     }
