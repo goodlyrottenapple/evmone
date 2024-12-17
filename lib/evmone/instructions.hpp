@@ -1065,6 +1065,7 @@ template <bool isSymbolic>
 inline void msize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.memory.size());
+    if constexpr (isSymbolic) assert(state.memory.size() == state.symbolic.memory.size());
 }
 
 template <bool isSymbolic> 
@@ -1322,10 +1323,20 @@ inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
         std::memmove(&state.memory[dst], &state.memory[src], size);
         if constexpr (isSymbolic)
         {
-            for (size_t i = 0; i < size; i++)
+            if(dst < src)
             {
-                state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
-                state.symbolic.memory[src+i].zero();
+                for (size_t i = 0; i < size; i++)
+                {
+                    state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
+                }
+            }
+            else
+            {
+                for (size_t _i = 0; _i < size; _i++)
+                {
+                    auto i = size - 1 - _i;
+                    state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
+                }
             }
         }
     }

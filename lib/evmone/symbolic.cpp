@@ -61,7 +61,7 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
         [&](const uint256& i) { os << "0x" << intx::hex(i); },
         [&](const Sload& i) { os << "LOAD(0x" << intx::hex(intx::be::load<uint256>(i.key)) << ")"; },
         [&](const Slice&) { os << "SLICE..."; },
-        [&](const Keccak256&) { os << "Keccak256..."; },
+        [&](const Keccak256&i) { os << "Keccak256(" << i.data << ", " << i.size << ")"; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }
