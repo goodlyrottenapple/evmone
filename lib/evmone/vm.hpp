@@ -49,6 +49,8 @@ public:
     }
 
     [[nodiscard]] Tracer<isSymbolic>* get_tracer() const noexcept { return m_first_tracer.get(); }
+
+    [[nodiscard]] bool compute_symbolic(std::function<evmc_bytes32(const evmc_address&, const evmc_bytes32&)>, std::function<void(const evmc_address&, const evmc_bytes32&, evmc_bytes32)>);
 };
 
 }  // namespace evmone

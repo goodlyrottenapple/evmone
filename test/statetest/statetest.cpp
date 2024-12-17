@@ -18,10 +18,11 @@ class StateTest : public testing::Test
     fs::path m_json_test_file;
     evmc::VM& m_vm;
     bool m_trace = false;
+    bool m_symbolic = false;
 
 public:
-    explicit StateTest(fs::path json_test_file, evmc::VM& vm, bool trace) noexcept
-      : m_json_test_file{std::move(json_test_file)}, m_vm{vm}, m_trace{trace}
+    explicit StateTest(fs::path json_test_file, evmc::VM& vm, bool trace, bool symbolic) noexcept
+      : m_json_test_file{std::move(json_test_file)}, m_vm{vm}, m_trace{trace}, m_symbolic{symbolic}
     {}
 
     void TestBody() final
@@ -29,18 +30,18 @@ public:
         std::ifstream f{m_json_test_file};
         const auto tests = evmone::test::load_state_tests(f);
         for (const auto& test : tests)
-            evmone::test::run_state_test(test, m_vm, m_trace);
+            evmone::test::run_state_test(test, m_vm, m_trace, m_symbolic);
     }
 };
 
-void register_test(const std::string& suite_name, const fs::path& file, evmc::VM& vm, bool trace)
+void register_test(const std::string& suite_name, const fs::path& file, evmc::VM& vm, bool trace, bool symbolic)
 {
     testing::RegisterTest(suite_name.c_str(), file.stem().string().c_str(), nullptr, nullptr,
         file.string().c_str(), 0,
-        [file, &vm, trace]() -> testing::Test* { return new StateTest(file, vm, trace); });
+        [file, &vm, trace, symbolic]() -> testing::Test* { return new StateTest(file, vm, trace, symbolic); });
 }
 
-void register_test_files(const fs::path& root, evmc::VM& vm, bool trace)
+void register_test_files(const fs::path& root, evmc::VM& vm, bool trace, bool symbolic)
 {
     if (is_directory(root))
     {
@@ -52,11 +53,11 @@ void register_test_files(const fs::path& root, evmc::VM& vm, bool trace)
         std::sort(test_files.begin(), test_files.end());
 
         for (const auto& p : test_files)
-            register_test(fs::relative(p, root).parent_path().string(), p, vm, trace);
+            register_test(fs::relative(p, root).parent_path().string(), p, vm, trace, symbolic);
     }
     else  // Treat as a file.
     {
-        register_test(root.parent_path().string(), root, vm, trace);
+        register_test(root.parent_path().string(), root, vm, trace, symbolic);
     }
 }
 }  // namespace
@@ -94,9 +95,12 @@ int main(int argc, char* argv[])
         app.add_flag("--trace-summary", trace_summary, "Output trace summary only")
             ->excludes(trace_opt);
 
+        bool symbolic = false;
+        app.add_flag("--symbolic", symbolic, "Enable symbolic VM");
+
         CLI11_PARSE(app, argc, argv);
 
-        evmc::VM vm{evmc_create_evmone(), {{"O", "0"}}};
+        evmc::VM vm{symbolic ? evmc_create_evmone_symbolic() : evmc_create_evmone(), {{"O", "0"}}};
 
         if (trace)
         {
@@ -105,7 +109,7 @@ int main(int argc, char* argv[])
         }
 
         for (const auto& p : paths)
-            register_test_files(p, vm, trace || trace_summary);
+            register_test_files(p, vm, trace || trace_summary, symbolic);
 
         return RUN_ALL_TESTS();
     }

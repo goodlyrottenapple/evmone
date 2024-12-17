@@ -112,7 +112,7 @@ Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymb
     }
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.store, key);
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.store, state.msg->recipient, key);
     return {EVMC_SUCCESS, gas_left};
 }
 

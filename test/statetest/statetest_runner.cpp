@@ -6,10 +6,11 @@
 #include "../state/rlp.hpp"
 #include "statetest.hpp"
 #include <gtest/gtest.h>
+#include <evmone/vm.hpp>
 
 namespace evmone::test
 {
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary)
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic)
 {
     SCOPED_TRACE(test.name);
     for (const auto& [rev, cases] : test.cases)
@@ -64,6 +65,23 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             }
 
             EXPECT_EQ(state_root, expected.state_hash);
+            if (symbolic && !expected.exception)
+            {
+                auto state_from_symbolic = test.pre_state;
+                auto valid = ((evmone::VM<true>*)vm.get_raw_pointer())->compute_symbolic(
+                    [&state_from_symbolic](auto& addr, auto& k) { return state_from_symbolic.get_storage(addr, k); },
+                    [&state_from_symbolic](auto& addr, auto& k, evmc::bytes32 v) { if (v) state_from_symbolic[addr].storage.insert_or_assign(k, v); else state_from_symbolic[addr].storage.erase(k); }
+                );
+                ASSERT_TRUE(valid);
+                for (auto& modified : get<state::TransactionReceipt>(res).state_diff.modified_accounts)
+                {
+                    auto& addr = modified.addr;
+                    for (auto& it : state[addr].storage)
+                    {
+                        EXPECT_EQ(it.second, state_from_symbolic[addr].storage[it.first]);
+                    }
+                }
+            }
         }
     }
 }

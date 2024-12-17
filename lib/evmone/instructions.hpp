@@ -1081,7 +1081,7 @@ inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state)
     const auto key = intx::be::store<evmc::bytes32>(x.val);
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.tstore, key, true);
+    if constexpr (isSymbolic) x.set_symbolic(*stack.arena, state.symbolic.tstore, state.msg->recipient, key, true);
 }
 
 template <bool isSymbolic> 

@@ -22,13 +22,13 @@ struct UnaryOp;
 struct BinaryOp;
 struct TernaryOp;
 struct SetItem;
-struct Offset;
 struct SetMem;
 struct Keccak256;
 
 
 struct Sload 
 {
+    evmc::address addr;
     evmc_bytes32 key;
 };
 
@@ -47,11 +47,6 @@ using SymbolicStorageMap = std::unordered_map<evmc::address, SymbolicStoragePtr>
 std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& i);
 
 
-struct Offset {
-    SymbolicStackItemPtr offset;
-    SymbolicStackItemPtr size;
-    friend std::ostream& operator<<(std::ostream&, const Offset&);
-};
 
 struct Slice8 {
     SymbolicStackItemPtr symbolic;
@@ -158,9 +153,8 @@ struct StackItem<true> {
         sval = rc_ptr<SymbolicStackItem>();
     }
 
-    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc_bytes32 key, bool is_tload = false)
+    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc::address addr, evmc_bytes32 key, bool is_tload = false)
     {
-        
         if (auto search = storage->find(key); search != storage->end())
         {
             sval = search->second;
@@ -174,8 +168,8 @@ struct StackItem<true> {
             }
             else
             {
-                if(sval.counter() == 1) *sval = Sload {key};
-                else sval = make_symbolic(arena, Sload {key});
+                if(sval.counter() == 1) *sval = Sload {addr, key};
+                else sval = make_symbolic(arena, Sload {addr, key});
             }
         }
     }
@@ -270,6 +264,6 @@ struct SymbolicRequirement
 };
 
 
-bool eval(std::function<evmc_bytes32(evmc_bytes32&)>, std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>>);
+bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)>, std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>>);
 
 }

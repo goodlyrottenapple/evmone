@@ -69,12 +69,6 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     return os;
 }
 
-
-std::ostream& operator<<(std::ostream& os, const Offset& i)
-{
-    return os << "slice at index" << *i.offset << ", size " << *i.size; 
-}
-
 uint8_t slice8(uint256& x, uint8_t idx)
 {
     assert(idx < 32);
@@ -82,7 +76,7 @@ uint8_t slice8(uint256& x, uint8_t idx)
 }
 
 
-bool eval(std::function<evmc_bytes32(evmc_bytes32&)> get_storage, std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>> stack)
+bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage, std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>> stack)
 {
     bool reqs_valid = true;
     while(!stack.empty() && reqs_valid)
@@ -94,7 +88,7 @@ bool eval(std::function<evmc_bytes32(evmc_bytes32&)> get_storage, std::vector<st
                     [&](uint256&) { stack.pop_back(); },
                     [&](Sload& sl) 
                     { 
-                        *ptr = intx::be::load<uint256>(get_storage(sl.key));
+                        *ptr = intx::be::load<uint256>(get_storage(sl.addr, sl.key));
                         stack.pop_back();
                     },
                     [&](Slice& s) 

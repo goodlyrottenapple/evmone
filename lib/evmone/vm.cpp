@@ -109,7 +109,7 @@ VM<true>::VM() noexcept
 }
 
 template <bool isSymbolic>
-ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size_t depth) noexcept
+EVMC_EXPORT ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size_t depth) noexcept
 {
     // Vector already has the capacity for all possible depths,
     // so reallocation never happens (therefore: noexcept).
@@ -123,6 +123,46 @@ ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size_t depth) no
 template ExecutionState<true>& VM<true>::get_execution_state(size_t depth) noexcept;
 template ExecutionState<false>& VM<false>::get_execution_state(size_t depth) noexcept;
 
+template <>
+EVMC_EXPORT bool VM<true>::compute_symbolic(std::function<evmc_bytes32(const evmc_address&, const evmc_bytes32&)> get_storage, std::function<void(const evmc_address&, const evmc_bytes32&, evmc_bytes32)> set_storage) 
+{
+    auto& symbolic = get_execution_state(0).symbolic;
+    std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>> stack;
+    assert(symbolic.store);
+    assert(symbolic.requirements);
+    bool something_to_eval = symbolic.requirements->size() > 0;
+
+    assert(symbolic.modified_stores);
+    for (auto &mod_store : *symbolic.modified_stores)
+    {
+        auto& store = mod_store.second;
+        assert(store);
+        for (auto& it : *store)
+        {
+            if(StackItem<true>::is_symbolic(it.second))
+            {
+                stack.push_back(it.second);
+                something_to_eval = true;
+            }
+        }
+    }
+
+    if(something_to_eval)
+    {
+        for (auto& r : *symbolic.requirements) stack.push_back(r);
+        auto valid = eval(get_storage, stack);
+        if (!valid) return false;
+    }
+
+    for (auto &mod_store : *symbolic.modified_stores)
+    {
+        auto& addr = mod_store.first;
+        auto& store = mod_store.second;
+        for (auto& it : *store)
+            set_storage(addr, it.first, intx::be::store<evmc::bytes32>(std::get<uint256>(*it.second)));
+    }
+    return true;
+}
 }  // namespace evmone
 
 extern "C" {
