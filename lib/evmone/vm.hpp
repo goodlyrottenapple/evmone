@@ -28,6 +28,9 @@ private:
     std::vector<ExecutionState<isSymbolic>> m_execution_states;
     std::unique_ptr<Tracer<isSymbolic>> m_first_tracer;
     ArenaAllocator arena;
+    std::vector<SymbolicRequirement> requirements;
+    SymbolicStorageMap stores;
+    SymbolicStorageMap tstores;
 
 public:
     VM() noexcept;

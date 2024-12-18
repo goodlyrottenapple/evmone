@@ -94,7 +94,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                 if(i%32 == 0 || i+input_offset+1 == std::min(current_memory_size, input_offset+input_size)) 
                 {
                     if(!current_all_concrete)
-                        state.symbolic.requirements->push_back(
+                        state.symbolic.requirements.push_back(
                             SymbolicRequirement{
                                 Req::equal, 
                                 StackItem<isSymbolic>::make_symbolic(*stack.arena, symbolic_data), 
@@ -114,7 +114,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
-    state.symbolic.returndata = nullptr;
+    if constexpr (isSymbolic) state.symbolic.returndata = nullptr;
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(dst) == EVMC_ACCESS_COLD)
     {

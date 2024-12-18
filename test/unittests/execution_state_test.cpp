@@ -26,7 +26,7 @@ TEST(execution_state, construct)
     const evmc_host_interface host_interface{};
     const uint8_t code[]{0x0f};
     const evmone::ExecutionState<false> st{
-        msg, EVMC_MAX_REVISION, host_interface, nullptr, {code, std::size(code)}};
+        msg, EVMC_MAX_REVISION, host_interface, nullptr, {code, std::size(code)}, evmone::SymbolicState<false>()};
 
     EXPECT_EQ(st.memory.size(), 0);
     EXPECT_EQ(st.msg, &msg);

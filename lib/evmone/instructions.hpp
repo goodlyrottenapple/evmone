@@ -1005,11 +1005,10 @@ inline code_iterator jumpi(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
     const auto& dst = stack[0];
     const auto& cond = stack[1];
     if constexpr (isSymbolic) {
-        assert(state.symbolic.requirements != nullptr);
         if (StackItem<true>::is_symbolic(cond.sval))
         {
-            if(cond.val != 0) state.symbolic.requirements->push_back(SymbolicRequirement{Req::notEqual, cond.sval, 0});
-            else state.symbolic.requirements->push_back(SymbolicRequirement{Req::equal,cond.sval, 0});
+            if(cond.val != 0) state.symbolic.requirements.push_back(SymbolicRequirement{Req::notEqual, cond.sval, 0});
+            else state.symbolic.requirements.push_back(SymbolicRequirement{Req::equal,cond.sval, 0});
         }
     }
     return cond.val ? jump_impl(state, dst) : pos + 1;

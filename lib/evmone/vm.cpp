@@ -116,7 +116,15 @@ EVMC_EXPORT ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size
     // The ExecutionStates are lazily created because they pre-allocate EVM memory and stack.
     assert(depth < m_execution_states.capacity());
     if (m_execution_states.size() <= depth)
-        m_execution_states.resize(depth + 1);
+    {
+        if constexpr (isSymbolic)
+            for (size_t i = m_execution_states.size(); i < depth+1; i++)
+            {
+                m_execution_states.emplace_back(SymbolicState<true>(arena, requirements, stores, tstores));
+            }
+        else
+            m_execution_states.resize(depth + 1);
+    }
     return m_execution_states[depth];
 }
 
@@ -126,14 +134,10 @@ template ExecutionState<false>& VM<false>::get_execution_state(size_t depth) noe
 template <>
 EVMC_EXPORT bool VM<true>::compute_symbolic(std::function<evmc_bytes32(const evmc_address&, const evmc_bytes32&)> get_storage, std::function<void(const evmc_address&, const evmc_bytes32&, evmc_bytes32)> set_storage) 
 {
-    auto& symbolic = get_execution_state(0).symbolic;
     std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>> stack;
-    assert(symbolic.store);
-    assert(symbolic.requirements);
-    bool something_to_eval = symbolic.requirements->size() > 0;
+    bool something_to_eval = requirements.size() > 0;
 
-    assert(symbolic.modified_stores);
-    for (auto &mod_store : *symbolic.modified_stores)
+    for (auto &mod_store : stores)
     {
         auto& store = mod_store.second;
         assert(store);
@@ -149,12 +153,12 @@ EVMC_EXPORT bool VM<true>::compute_symbolic(std::function<evmc_bytes32(const evm
 
     if(something_to_eval)
     {
-        for (auto& r : *symbolic.requirements) stack.push_back(r);
+        for (auto& r : requirements) stack.push_back(r);
         auto valid = eval(get_storage, stack);
         if (!valid) return false;
     }
 
-    for (auto &mod_store : *symbolic.modified_stores)
+    for (auto &mod_store : stores)
     {
         auto& addr = mod_store.first;
         auto& store = mod_store.second;

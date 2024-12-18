@@ -29,6 +29,7 @@ add_library(evmone
     rc_ptr.hpp
     symbolic.cpp
     symbolic.hpp
+    symbolic_state.hpp
     tracing.cpp
     tracing.hpp
     vm.cpp

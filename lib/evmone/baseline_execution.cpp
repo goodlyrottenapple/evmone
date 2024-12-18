@@ -307,18 +307,19 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     auto gas = msg.gas;
 
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
-    state.arena = vm.get_arena();
     state.reset(msg, rev, host, ctx, analysis.raw_code());
+    size_t stores_checkpoint, tstores_checkpoint;
+
     if constexpr (isSymbolic){
-        state.symbolic.arena = state.arena;
-        state.symbolic.set_modified_stores(msg.depth == 0);
-        state.symbolic.set_tstores(msg.depth == 0);
-        state.symbolic.set_requirements(msg.depth == 0);
 
         // only reset the symbolic calldata and returndata state if this is a 0 depth call.
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
         if(msg.depth == 0)
         {
+            state.symbolic.reset_stores();
+            state.symbolic.reset_tstores();
+            state.symbolic.reset_requirements();
+
             SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
             state.symbolic.calldata_size = state.msg->input_size;
             // TODO could this be leaking if calldata was set before??
@@ -337,23 +338,16 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         if (msg.depth < 1024)
         {
             auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
-            state_child.arena = state.arena;
-            state_child.symbolic.arena = state.arena;
             state.child = &state_child;
             assert(state.child != nullptr);
-            assert(state.symbolic.modified_stores != nullptr);
-            state.child->symbolic.modified_stores = state.symbolic.modified_stores;
-            assert(state.symbolic.tstores != nullptr);
-            state.child->symbolic.tstores = state.symbolic.tstores;
-            assert(state.symbolic.requirements != nullptr);
-            state.child->symbolic.requirements = state.symbolic.requirements;
-
             state.child->symbolic.calldata_size = 0;
             state.child->symbolic.calldata = nullptr;
         }
 
         state.symbolic.set_store(msg.recipient);
+        stores_checkpoint = state.symbolic.stores_checkpoint();
         state.symbolic.set_tstore(msg.recipient);
+        tstores_checkpoint = state.symbolic.tstores_checkpoint();
     }
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
@@ -391,26 +385,11 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     if (INTX_UNLIKELY(tracer != nullptr))
         tracer->notify_execution_end(result);
 
-    // make sure that the state of the symbolic store is captured at the exit of a call,
-    // in case we are in a nested context which will call into the same contract and make further
-    // modifications to its state
     if constexpr (isSymbolic) {
-        (*state.symbolic.modified_stores)[msg.recipient] = state.symbolic.store;
-
-        // if (msg.depth == 0)
-        // {  
-        //     std::cout << "symbolic store:\n" << state.symbolic.sstore;
-
-        //     std::cout << "\nsymbolic memory:\n" << state.symbolic.smemory;
-
-        //     std::cout << "\nrequirements:\n";
-        //     assert(state.symbolic.requirements != nullptr);
-        //     for (auto& r : *state.symbolic.requirements)
-        //     {
-        //         std::cout << r << "\n";
-        //     }
-        //     std::cout << std::flush;
-        // }
+        if(state.status != EVMC_SUCCESS) {
+            state.symbolic.rollback_stores(stores_checkpoint);
+            state.symbolic.rollback_tstores(tstores_checkpoint);
+        }
     }
     return result;
 }

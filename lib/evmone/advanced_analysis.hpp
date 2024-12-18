@@ -50,7 +50,7 @@ struct AdvancedExecutionState : ExecutionState<false>
     AdvancedExecutionState(const evmc_message& message, evmc_revision revision,
         const evmc_host_interface& host_interface, evmc_host_context* host_ctx,
         bytes_view _code) noexcept
-      : ExecutionState{message, revision, host_interface, host_ctx, _code}, gas_left{message.gas}
+      : ExecutionState{message, revision, host_interface, host_ctx, _code, SymbolicState<false>()}, gas_left{message.gas}
     {}
 
     /// Computes the current EVM stack height.
