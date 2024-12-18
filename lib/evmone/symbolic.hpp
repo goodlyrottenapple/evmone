@@ -37,10 +37,7 @@ using SymbolicStackItem =
 using SymbolicStackItemPtr = rc_ptr<SymbolicStackItem>;
 
 using SymbolicStorage = std::unordered_map<evmc::bytes32, SymbolicStackItemPtr>;
-using SymbolicStoragePtr = SymbolicStorage*;
-
-
-using SymbolicStorageMap = std::unordered_map<evmc::address, SymbolicStoragePtr>;
+using SymbolicStorageMap = std::unordered_map<evmc::address, SymbolicStorage>;
 
 
 
@@ -151,27 +148,6 @@ struct StackItem<true> {
     inline void set_pure()
     {
         sval = rc_ptr<SymbolicStackItem>();
-    }
-
-    inline void set_symbolic(ArenaAllocator& arena, SymbolicStoragePtr storage, evmc::address addr, evmc_bytes32 key, bool is_tload = false)
-    {
-        if (auto search = storage->find(key); search != storage->end())
-        {
-            sval = search->second;
-        }
-        else
-        {
-            if (is_tload)
-            {
-                assert(val == 0);
-                set_pure();
-            }
-            else
-            {
-                if(sval.counter() == 1) *sval = Sload {addr, key};
-                else sval = make_symbolic(arena, Sload {addr, key});
-            }
-        }
     }
 
     inline void set_symbolic(ArenaAllocator& arena, UnOp&& op, StackItem& first)

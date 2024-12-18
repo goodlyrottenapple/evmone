@@ -120,7 +120,7 @@ EVMC_EXPORT ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size
         if constexpr (isSymbolic)
             for (size_t i = m_execution_states.size(); i < depth+1; i++)
             {
-                m_execution_states.emplace_back(SymbolicState<true>(arena, requirements, stores, tstores));
+                m_execution_states.emplace_back(SymbolicState<true>(arena, requirements, journaled));
             }
         else
             m_execution_states.resize(depth + 1);
@@ -137,11 +137,10 @@ EVMC_EXPORT bool VM<true>::compute_symbolic(std::function<evmc_bytes32(const evm
     std::vector<std::variant<SymbolicStackItemPtr, SymbolicRequirement>> stack;
     bool something_to_eval = requirements.size() > 0;
 
-    for (auto &mod_store : stores)
+    for (auto &mod_store : journaled.stores)
     {
         auto& store = mod_store.second;
-        assert(store);
-        for (auto& it : *store)
+        for (auto& it : store)
         {
             if(StackItem<true>::is_symbolic(it.second))
             {
@@ -158,11 +157,11 @@ EVMC_EXPORT bool VM<true>::compute_symbolic(std::function<evmc_bytes32(const evm
         if (!valid) return false;
     }
 
-    for (auto &mod_store : stores)
+    for (auto &mod_store : journaled.stores)
     {
         auto& addr = mod_store.first;
         auto& store = mod_store.second;
-        for (auto& it : *store)
+        for (auto& it : store)
             set_storage(addr, it.first, intx::be::store<evmc::bytes32>(std::get<uint256>(*it.second)));
     }
     return true;

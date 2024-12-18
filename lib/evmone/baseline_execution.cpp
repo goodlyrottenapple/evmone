@@ -308,7 +308,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
 
     auto& state = vm.get_execution_state(static_cast<size_t>(msg.depth));
     state.reset(msg, rev, host, ctx, analysis.raw_code());
-    size_t stores_checkpoint, tstores_checkpoint;
+    size_t checkpoint;
 
     if constexpr (isSymbolic){
 
@@ -316,9 +316,8 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
         if(msg.depth == 0)
         {
-            state.symbolic.reset_stores();
-            state.symbolic.reset_tstores();
-            state.symbolic.reset_requirements();
+            state.symbolic.journaled.reset();
+            state.symbolic.requirements.clear();
 
             SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
             state.symbolic.calldata_size = state.msg->input_size;
@@ -344,10 +343,8 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             state.child->symbolic.calldata = nullptr;
         }
 
-        state.symbolic.set_store(msg.recipient);
-        stores_checkpoint = state.symbolic.stores_checkpoint();
-        state.symbolic.set_tstore(msg.recipient);
-        tstores_checkpoint = state.symbolic.tstores_checkpoint();
+        state.symbolic.journaled.init_address(msg.recipient);
+        checkpoint = state.symbolic.journaled.checkpoint();
     }
 
     state.analysis.baseline = &analysis;  // Assign code analysis for instruction implementations.
@@ -387,8 +384,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
 
     if constexpr (isSymbolic) {
         if(state.status != EVMC_SUCCESS) {
-            state.symbolic.rollback_stores(stores_checkpoint);
-            state.symbolic.rollback_tstores(tstores_checkpoint);
+            state.symbolic.journaled.rollback(checkpoint);
         }
     }
     return result;

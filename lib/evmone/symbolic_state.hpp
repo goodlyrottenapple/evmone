@@ -166,6 +166,121 @@ public:
     }
 };
 
+using SymbolicRequirements = std::vector<SymbolicRequirement>;
+
+
+enum class JournalEntryType {StoreChange, TstoreChange};
+
+struct JournalEntry
+{
+    evmc::address addr;
+    evmc::bytes32 key;
+    std::optional<SymbolicStackItemPtr> prev_value;
+    JournalEntryType type;
+};
+
+class JournaledSymbolicState
+{
+    ArenaAllocator& arena;
+    std::vector<JournalEntry> journal;
+public:
+    SymbolicStorageMap stores;
+    SymbolicStorageMap tstores;
+    JournaledSymbolicState(ArenaAllocator& a) : arena{a} {}
+
+    void reset()
+    {
+        journal.clear();
+        stores.clear();
+        tstores.clear();
+    }
+
+    // set up the symbolic store by looking up any previous symbolic state at the recipient address,
+    // in case we are in a nested context, otherwise initialise an empty store forthe address
+    inline void init_address(evmc::address addr)
+    {
+        if (auto search = stores.find(addr); search == stores.end())
+        {
+            stores[addr] = SymbolicStorage();
+        }
+        if (auto search = tstores.find(addr); search == tstores.end())
+        {
+            tstores[addr] = SymbolicStorage();
+        }
+    }
+
+    void get_(SymbolicStorageMap& m, evmc::address addr, evmc::bytes32 key, SymbolicStackItemPtr& sval, bool is_tload = false)
+    {
+        if (auto search = m[addr].find(key); search != m[addr].end())
+        {
+            sval = search->second;
+        }
+        else
+        {
+            if (is_tload)
+            {
+                sval = rc_ptr<SymbolicStackItem>();
+            }
+            else
+            {
+                if(sval.counter() == 1) *sval = Sload {addr, key};
+                else sval = StackItem<true>::make_symbolic(arena, Sload {addr, key});
+            }
+        }
+    }
+
+    inline void get_store(evmc::address addr, evmc::bytes32 key, SymbolicStackItemPtr& sval)
+    {
+        get_(stores, addr, key, sval);
+    }
+
+    inline void get_tstore(evmc::address addr, evmc::bytes32 key, SymbolicStackItemPtr& sval)
+    {
+        get_(tstores, addr, key, sval, true);
+    }
+
+
+    void update_(SymbolicStorageMap& m, JournalEntryType&& type, evmc::address addr, evmc_bytes32 k, StackItem<true> v)
+    {
+        std::optional<SymbolicStackItemPtr>&& prev_value = std::nullopt;
+        if (auto search = m[addr].find(k); search != m[addr].end())
+        {
+            prev_value = search->second;
+        }
+        journal.emplace_back(addr, k, prev_value, type);
+        if(v.is_pure()) m[addr][k] = StackItem<true>::make_symbolic(arena, v.val);
+        else m[addr][k] = v.sval;
+    }
+
+    inline void update_store(evmc::address addr, evmc::bytes32 k, StackItem<true> v)
+    {
+        update_(stores, JournalEntryType::StoreChange, addr, k, v);
+    }
+
+    inline void update_tstore(evmc::address addr, evmc::bytes32 k, StackItem<true> v)
+    {
+        update_(tstores, JournalEntryType::TstoreChange, addr, k, v);
+    }
+
+    inline size_t checkpoint()
+    {
+        return journal.size();
+    }
+
+    void rollback(size_t checkpoint)
+    {
+        while (journal.size() != checkpoint)
+        {
+            auto& j = journal.back();
+            auto& selected_store = j.type == JournalEntryType::StoreChange ? stores : tstores;
+            if(j.prev_value)
+                selected_store[j.addr][j.key] = j.prev_value.value();
+            else  selected_store[j.addr].erase(j.key);
+            journal.pop_back();
+        }
+    }
+};
+
 template <bool isSymbolic>
 class SymbolicState;
 
@@ -182,15 +297,12 @@ template <>
 class SymbolicState<true>
 {
 public:
-    using SymbolicRequirements = std::vector<SymbolicRequirement>;
 
     ArenaAllocator& arena;
     SymbolicRequirements& requirements;
-    SymbolicStorageMap& stores;
-    SymbolicStorageMap& tstores;
-    SymbolicStoragePtr store = nullptr;
+    JournaledSymbolicState& journaled;
+    evmc::address address;
     SymbolicMemory<true> memory;
-    SymbolicStoragePtr tstore = nullptr;
     SymbolicStackItemPtr caller;
     SymbolicStackItemPtr callvalue;
     SymbolicMemoryPtr calldata = nullptr;
@@ -198,8 +310,7 @@ public:
     SymbolicMemoryPtr returndata = nullptr;
     size_t returndata_size = 0;
 
-    SymbolicState(ArenaAllocator& a, SymbolicRequirements& r, SymbolicStorageMap& ss, SymbolicStorageMap& ts) :
-        arena{a}, requirements{r}, stores{ss}, tstores{ts} {}
+    SymbolicState(ArenaAllocator& a, SymbolicRequirements& r, JournaledSymbolicState& j) : arena{a}, requirements{r}, journaled{j} {}
 
     void symbolic_value_matches_concrete(const StackItem<true>& i, std::convertible_to<const StackItem<true>&> auto... is)
     {
@@ -208,21 +319,6 @@ public:
 
         if (StackItem<true>::is_symbolic(i.sval))
             requirements.push_back(SymbolicRequirement{Req::equal,i.sval, i.val});
-    }
-
-    inline void reset_requirements()
-    {
-        requirements.clear();
-    }
-
-    inline void reset_stores()
-    {
-        stores.clear();
-    }
-
-    inline void reset_tstores()
-    {
-        tstores.clear();
     }
 
     static inline void reset_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
@@ -380,65 +476,6 @@ public:
         }
         else if(is_full_symbolic_word) return symbolic.word[0].symbolic;
         else return StackItem<true>::make_symbolic(arena, symbolic);
-    }
-
-    inline void update_tstore(evmc_bytes32 k, StackItem<true> v)
-    {
-        (*tstore)[k] = v.sval;
-    }
-
-    // set up the symbolic store by looking up any previous symbolic state at the recipient address,
-    // in case we are in a nested context
-    inline void set_store(evmc_address init)
-    {
-        if (auto search = stores.find(init); search != stores.end())
-        {
-            store = search->second;
-        }
-        else
-        {
-            store = new SymbolicStorage();
-            stores[init] = store;
-        }
-    }
-
-    // set up the symbolic tstore by looking up any previous symbolic state at the recipient address,
-    // in case we are in a nested context
-    inline void set_tstore(evmc_address init)
-    {
-        if (auto search = tstores.find(init); search != tstores.end())
-        {
-            tstore = search->second;
-        }
-        else
-        {
-            tstore = new SymbolicStorage();
-            tstores[init] = tstore;
-        }
-    }
-
-    inline size_t tstores_checkpoint()
-    {
-        return 0;
-    }
-
-    inline void rollback_tstores(size_t)
-    {
-    }
-
-    inline void update_store(evmc_bytes32 k, StackItem<true> v)
-    {
-        if(v.is_pure()) (*store)[k] = StackItem<true>::make_symbolic(arena, v.val);
-        else (*store)[k] = v.sval;
-    }
-
-    inline size_t stores_checkpoint()
-    {
-        return 0;
-    }
-
-    inline void rollback_stores(size_t)
-    {
     }
 };
 }  // namespace evmone

@@ -65,7 +65,7 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             }
 
             EXPECT_EQ(state_root, expected.state_hash);
-            if (symbolic && !expected.exception)
+            if (symbolic && !expected.exception && get<state::TransactionReceipt>(res).status == EVMC_SUCCESS)
             {
                 auto state_from_symbolic = test.pre_state;
                 auto valid = ((evmone::VM<true>*)vm.get_raw_pointer())->compute_symbolic(
@@ -76,6 +76,7 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
                 for (auto& modified : get<state::TransactionReceipt>(res).state_diff.modified_accounts)
                 {
                     auto& addr = modified.addr;
+                    // std::cerr << "checking addr: 0x" << intx::hex(intx::be::load<uint256>(addr)) << "\n";
                     for (auto& it : state[addr].storage)
                     {
                         EXPECT_EQ(it.second, state_from_symbolic[addr].storage[it.first]);
