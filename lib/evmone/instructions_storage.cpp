@@ -143,15 +143,16 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
             0;
     const auto status = state.host.set_storage(state.msg->recipient, key, value);
 
+    if constexpr (isSymbolic)
+        state.symbolic.journaled.update_store(state.msg->recipient, key, val_index);
+
     const auto [gas_cost_warm, gas_refund] = sstore_costs[state.rev][status];
     const auto gas_cost = gas_cost_warm + gas_cost_cold;
     if ((gas_left -= gas_cost) < 0)
         return {EVMC_OUT_OF_GAS, gas_left};
     state.gas_refund += gas_refund;
 
-    if constexpr (isSymbolic)
-        state.symbolic.journaled.update_store(state.msg->recipient, key, val_index);
-    
+
     return {EVMC_SUCCESS, gas_left};
 }
 
