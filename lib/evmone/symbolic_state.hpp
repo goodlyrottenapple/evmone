@@ -337,13 +337,50 @@ public:
         }
     }
 
+    static void set_(SymbolicMemoryPtr& dst, size_t& dst_size, size_t src_offset, size_t src_size, const uint8_t* src)
+    {
+        if(dst) reset_symbolic_memory_ptr(dst.get(), dst_size);
+        dst_size = src_size;
+        if(src_size > 0)
+        {
+            dst.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(dst.release(), sizeof(SymbolicMemoryLocation) * src_size)));
+            for (size_t i = 0; i < src_size; i++)
+            {
+                dst[i].zero(true);
+                dst[i] = src[i+src_offset];
+            }
+        }
+        else
+            dst = nullptr;
+    }
+
+    void set_(SymbolicMemoryPtr& dst, size_t& dst_size, size_t src_offset, size_t src_size, const SymbolicMemoryLocation* src)
+    {
+        if(dst) reset_symbolic_memory_ptr(dst.get(), dst_size);
+        dst_size = src_size;
+        if(src_size > 0)
+        {
+            dst.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(dst.release(), sizeof(SymbolicMemoryLocation) * src_size)));
+            std::memcpy(dst.get(), &src[src_offset], sizeof(SymbolicMemoryLocation) * src_size);
+            acquire_symbolic_memory_ptr(dst.get(), dst_size);
+        }
+        else
+            dst = nullptr;
+    }
+
+    inline void set_calldata()
+    {
+        set_(calldata, calldata_size, 0, 0, (uint8_t*)nullptr);
+    }
+
     inline void set_calldata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
     {
-        if(calldata) reset_symbolic_memory_ptr(calldata.get(), calldata_size);
-        calldata_size = size;
-        calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(calldata.release(), sizeof(SymbolicMemoryLocation) * size)));
-        std::memcpy(calldata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
-        acquire_symbolic_memory_ptr(calldata.get(), calldata_size);
+        set_(calldata, calldata_size, offset, size, m);
+    }
+
+    inline void set_calldata(size_t offset, size_t size, const uint8_t* m)
+    {
+        set_(calldata, calldata_size, offset, size, m);
     }
 
     inline SymbolicStackItemPtr load_calldata(size_t begin, size_t end)
@@ -379,33 +416,19 @@ public:
         else return StackItem<true>::make_symbolic(arena, symbolic);
     }
 
+    inline void set_returndata()
+    {
+        set_(returndata, returndata_size, 0, 0, (uint8_t*)nullptr);
+    }
+
     inline void set_returndata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
     {
-        if(returndata) reset_symbolic_memory_ptr(returndata.get(), returndata_size);
-        returndata_size = size;
-        if(size > 0)
-        {
-            returndata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(returndata.release(), sizeof(SymbolicMemoryLocation) * size)));
-            std::memcpy(returndata.get(), &m[offset], sizeof(SymbolicMemoryLocation) * size);
-            acquire_symbolic_memory_ptr(returndata.get(), returndata_size);
-        }
-        else returndata = nullptr;
+        set_(returndata, returndata_size, offset, size, m);
     }
 
     inline void set_returndata(size_t offset, size_t size, const uint8_t* m)
     {
-        if(returndata) reset_symbolic_memory_ptr(returndata.get(), returndata_size);
-        returndata_size = size;
-        if(size > 0)
-        {
-            returndata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(returndata.release(), sizeof(SymbolicMemoryLocation) * size)));
-            for (size_t i = 0; i < size; i++)
-            {
-                returndata[i].zero(true);
-                returndata[i] = m[i+offset];
-            }
-        }
-        else returndata = nullptr;
+        set_(returndata, returndata_size, offset, size, m);
     }
 
     inline void update_memory(size_t dst, size_t size, SymbolicMemoryLocation* m)
@@ -428,11 +451,14 @@ public:
     {
         if(size == 0) return SymbolicStackItemPtr();
         auto data = std::make_unique<Slice8[]>(size);
+        bool all_concrete = true;
         for (size_t i = 0; i < size; i++)
         {
             data[i] = memory[src+i].get_symbolic();
+            if(!memory[src+i].is_conrete()) all_concrete = false;
         }
-        return StackItem<true>::make_symbolic(arena, Keccak256 {std::move(data), size});
+        if(all_concrete) return rc_ptr<SymbolicStackItem>();
+        else return StackItem<true>::make_symbolic(arena, Keccak256 {std::move(data), size});
     }
 
     inline void reset_memory(size_t index, size_t size)
@@ -467,7 +493,7 @@ public:
                 is_full_symbolic_word = 
                     is_full_symbolic_word && 
                     symbolic.word[i].symbolic.raw() == symbolic_ptr && 
-                    symbolic.word[i].concrete_or_offset == i;
+                    symbolic.word[i].concrete_or_offset == 31-i;
             }
         }
         if(all_pure)

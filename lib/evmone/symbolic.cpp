@@ -61,7 +61,15 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
         [&](const uint256& i) { os << "0x" << intx::hex(i); },
         [&](const Sload& i) { os << "LOAD(0x" << intx::hex(intx::be::load<uint256>(i.key)) << ")"; },
         [&](const Slice&) { os << "SLICE..."; },
-        [&](const Keccak256&i) { os << "Keccak256(" << i.data << ", " << i.size << ")"; },
+        [&](const Keccak256&i) { 
+            os << "Keccak256([";
+            for (size_t j = 0; j < i.size; j++)
+            {
+                if(i.data[j].is_concrete()) os << static_cast<int>(i.data[j].concrete_or_offset);
+                else  os << *i.data[j].symbolic << " ! " << static_cast<int>(i.data[j].concrete_or_offset);
+                if(j < i.size-1) os << ", ";
+            }
+            os << "], " << i.size << ")"; },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }

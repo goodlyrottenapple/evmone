@@ -207,7 +207,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                 state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
             }
             else
-                state.symbolic.set_returndata(0, 0, (uint8_t*)nullptr);
+                state.symbolic.set_returndata();
         }
     }
     stack.top() = result.status_code == EVMC_SUCCESS;
@@ -432,7 +432,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
             // and passes them via the code and code_size in
             // evmc_result execute(evmc_vm* c_vm, const evmc_host_interface* host, ... const uint8_t* code, size_t code_size)
             // feels VERY hacky
-            state.child->symbolic.set_calldata(init_code_offset, 0, nullptr);
+            state.child->symbolic.set_calldata();
     msg.sender = state.msg->recipient;
     msg.depth = state.msg->depth + 1;
     msg.create2_salt = intx::be::store<evmc::bytes32>(has_salt ? msalt.value().val : uint256{});
@@ -450,7 +450,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
         if (state.child && state.child->output_size != 0)
             state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
         else
-            state.symbolic.set_returndata(0, 0, (uint8_t*)nullptr);
+            state.symbolic.set_returndata();
     }
 
 

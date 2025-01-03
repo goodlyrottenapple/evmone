@@ -941,7 +941,7 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
         {
             for (size_t i = 0; i < 32; i++)
             {
-                state.symbolic.memory[static_cast<size_t>(index.val)+i] = Slice8 {value.sval, (uint8_t)i};
+                state.symbolic.memory[static_cast<size_t>(index.val)+i] = Slice8 {value.sval, (uint8_t)(31-i)};
             }
         }
     }

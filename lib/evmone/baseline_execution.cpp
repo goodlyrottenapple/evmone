@@ -312,35 +312,19 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
 
     if constexpr (isSymbolic){
 
-        // only reset the symbolic calldata and returndata state if this is a 0 depth call.
+        // only set the symbolic calldata and if this is a 0 depth call.
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
         if(msg.depth == 0)
         {
             state.symbolic.journaled.reset();
             state.symbolic.requirements.clear();
-
-            SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.calldata.get(), state.symbolic.calldata_size);
-            state.symbolic.calldata_size = state.msg->input_size;
-            // TODO could this be leaking if calldata was set before??
-            state.symbolic.calldata.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(state.symbolic.calldata.release(), sizeof(SymbolicMemoryLocation) * state.symbolic.calldata_size)));
-            for (size_t i = 0; i < state.msg->input_size; i++)
-            {
-                state.symbolic.calldata[i].zero(true);
-                state.symbolic.calldata[i] = state.msg->input_data[i];
-            }
-
-            SymbolicState<true>::reset_symbolic_memory_ptr(state.symbolic.returndata.get(), state.symbolic.returndata_size);
-            state.symbolic.returndata_size = 0;
-            state.symbolic.returndata = nullptr;
+            state.symbolic.set_calldata(0, state.msg->input_size, state.msg->input_data);
         }
 
         if (msg.depth < 1024)
         {
             auto& state_child = vm.get_execution_state(static_cast<size_t>(msg.depth + 1));
             state.child = &state_child;
-            assert(state.child != nullptr);
-            state.child->symbolic.calldata_size = 0;
-            state.child->symbolic.calldata = nullptr;
         }
 
         state.symbolic.journaled.init_address(msg.recipient);
