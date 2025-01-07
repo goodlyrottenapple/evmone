@@ -24,6 +24,11 @@ public:
         rc_ptr::acquire(ptr.mPtr);
     }
 
+    void drop()
+    {
+        mPtr = nullptr;
+    }
+
     static void release(rc_ptr_data<T> *mPtr)
     {
         if(mPtr != nullptr)
