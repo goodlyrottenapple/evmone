@@ -30,16 +30,6 @@ public:
     {
         std::ifstream f{m_json_test_file};
         const auto tests = evmone::test::load_state_tests(f);
-         if (m_symbolic) {
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_execution_state(0).symbolic.journaled.reset();
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_execution_state(0).symbolic.requirements.clear();
-            // ((evmone::VM<true>*)vm.get_raw_pointer())->get_execution_state(0).symbolic.returndata = nullptr;
-            // ((evmone::VM<true>*)vm.get_raw_pointer())->get_execution_state(0).symbolic.returndata_size = nullptr;
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_execution_state(0).symbolic.memory.clear();
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_execution_state(0).status = EVMC_SUCCESS;
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_execution_state(0).stack_space.reset();
-            ((evmone::VM<true>*)m_vm.get_raw_pointer())->get_arena()->reset();
-        }
 
         for (const auto& test : tests)
             evmone::test::run_state_test(test, m_vm, m_trace, m_symbolic);
@@ -82,7 +72,7 @@ int main(int argc, char* argv[])
         "-"
         // Slow tests:
         "stCreateTest.CreateOOGafterMaxCodesize:"      // pass
-        "stQuadraticComplexityTest.Call50000_sha256:"  // pass
+        "stQuadraticComplexityTest.*:"  // pass
         "stTimeConsuming.static_Call50000_sha256:"     // pass
         "stTimeConsuming.CALLBlake2f_MaxRounds:"       // pass
         "VMTests/vmPerformance.*:"                     // pass

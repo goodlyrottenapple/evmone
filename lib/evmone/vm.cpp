@@ -125,6 +125,7 @@ EVMC_EXPORT ExecutionState<isSymbolic>& VM<isSymbolic>::get_execution_state(size
         else
             m_execution_states.resize(depth + 1);
     }
+    current_states_size = std::max(current_states_size, depth+1);
     return m_execution_states[depth];
 }
 

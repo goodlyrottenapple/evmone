@@ -10,8 +10,27 @@
 
 namespace evmone::test
 {
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool )
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic)
 {
+    if (symbolic) 
+            {
+                ((evmone::VM<true>*)vm.get_raw_pointer())->reset();
+                // auto* svm = (evmone::VM<true>*)vm.get_raw_pointer();
+                // svm->get_execution_state(0).symbolic.journaled.reset();
+                // svm->get_execution_state(0).symbolic.requirements.clear();
+                // for (size_t i = 0; i < svm->get_execution_state_size(); i++)
+                // {
+                //     svm->get_execution_state(i).symbolic.memory.clear();
+                //     svm->get_execution_state(i).symbolic.caller.drop();
+                //     svm->get_execution_state(i).symbolic.callvalue.drop();
+                //     svm->get_execution_state(i).symbolic.set_calldata();
+                //     svm->get_execution_state(i).symbolic.set_returndata();
+                //     svm->get_execution_state(i).status = EVMC_SUCCESS;
+                //     svm->get_execution_state(i).stack_space.reset();
+                // }
+                // svm->get_arena()->reset();
+            }
+            
     SCOPED_TRACE(test.name);
     for (const auto& [rev, cases] : test.cases)
     {
@@ -23,6 +42,9 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             //     continue;
             // if (case_index != 3)
             //     continue;
+
+
+            
 
             const auto& expected = cases[case_index];
             const auto tx = test.multi_tx.get(expected.indexes);
