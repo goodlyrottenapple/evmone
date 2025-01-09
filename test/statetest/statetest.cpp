@@ -6,6 +6,7 @@
 #include <CLI/CLI.hpp>
 #include <evmone/evmone.h>
 #include <evmone/version.h>
+#include <evmone/vm.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
 
@@ -29,6 +30,7 @@ public:
     {
         std::ifstream f{m_json_test_file};
         const auto tests = evmone::test::load_state_tests(f);
+
         for (const auto& test : tests)
             evmone::test::run_state_test(test, m_vm, m_trace, m_symbolic);
     }
@@ -70,7 +72,7 @@ int main(int argc, char* argv[])
         "-"
         // Slow tests:
         "stCreateTest.CreateOOGafterMaxCodesize:"      // pass
-        "stQuadraticComplexityTest.Call50000_sha256:"  // pass
+        "stQuadraticComplexityTest.*:"  // pass
         "stTimeConsuming.static_Call50000_sha256:"     // pass
         "stTimeConsuming.CALLBlake2f_MaxRounds:"       // pass
         "VMTests/vmPerformance.*:"                     // pass

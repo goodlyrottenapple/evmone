@@ -9,6 +9,7 @@ struct rc_ptr_data
     T object;
     ArenaAllocator* arena;
     size_t rc;
+    bool locked = false;
 };
 
 template < class T >
@@ -24,12 +25,17 @@ public:
         rc_ptr::acquire(ptr.mPtr);
     }
 
+    void drop()
+    {
+        mPtr = nullptr;
+    }
+
     static void release(rc_ptr_data<T> *mPtr)
     {
         if(mPtr != nullptr)
         {
             --mPtr->rc;
-            if(mPtr->rc == 0)
+            if(mPtr->rc == 0 && !mPtr->locked)
             {
                 mPtr->object.~T();
                 mPtr->arena->free(mPtr);
@@ -41,6 +47,12 @@ public:
     {
         if(mPtr != nullptr) ++mPtr->rc;
     }
+
+    static void lock(rc_ptr_data<T> *mPtr)
+    {
+        if(mPtr != nullptr) mPtr->locked = true;
+    }
+
 
     ~rc_ptr()
     {

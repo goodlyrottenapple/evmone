@@ -137,6 +137,10 @@ struct StackItem<true> {
         {
             if (std::holds_alternative<uint256>(*sval))
             {
+                if(val != std::get<uint256>(*sval))
+                {
+                    std::cerr << " val: " << val << "\nsval: " << std::get<uint256>(*sval) << "\n";
+                }
                 assert(val == std::get<uint256>(*sval));
                 return true;
             }

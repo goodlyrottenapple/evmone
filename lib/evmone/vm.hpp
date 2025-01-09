@@ -30,11 +30,35 @@ private:
     ArenaAllocator arena;
     std::vector<SymbolicRequirement> requirements;
     JournaledSymbolicState journaled = JournaledSymbolicState(arena);
+    size_t current_states_size = 0;
 
 public:
     VM() noexcept;
 
     [[nodiscard]] ExecutionState<isSymbolic>& get_execution_state(size_t depth) noexcept;
+
+    void reset()
+    {
+        if constexpr (isSymbolic)
+        {
+            auto& state = get_execution_state(0);
+            state.symbolic.journaled.reset();
+            state.symbolic.requirements.clear();
+            for (size_t i = 0; i < current_states_size; i++)
+            {
+                auto& s = get_execution_state(i);
+                s.symbolic.memory.clear();
+                s.symbolic.caller.drop();
+                s.symbolic.callvalue.drop();
+                s.symbolic.set_calldata();
+                s.symbolic.set_returndata();
+                s.status = EVMC_SUCCESS;
+                s.stack_space.reset();
+            }
+            arena.reset();
+        }
+        current_states_size = 0;
+    }
 
     void add_tracer(std::unique_ptr<Tracer<isSymbolic>> tracer) noexcept
     {

@@ -553,7 +553,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
         index.val = loaded;
         if constexpr (isSymbolic)
         {
-            assert(state.msg->input_size == state.symbolic.calldata_size);
+            assert(state.msg->input_size == state.symbolic.calldata.size);
             index.sval = state.symbolic.load_calldata(begin, end);
         }
     }
@@ -591,8 +591,9 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         std::memcpy(&state.memory[dst], &state.msg->input_data[src], copy_size);
         if constexpr (isSymbolic)
         {
-            assert(state.msg->input_size == state.symbolic.calldata_size);
-            state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata[src]);
+            assert(state.msg->input_size == state.symbolic.calldata.size);
+            if (state.symbolic.calldata.is_concrete) state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata.concrete[src]);
+            else state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata.symbolic[src]);
         }
     }        
 

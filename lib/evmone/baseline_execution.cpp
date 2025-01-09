@@ -318,7 +318,9 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
         {
             state.symbolic.journaled.reset();
             state.symbolic.requirements.clear();
-            state.symbolic.set_calldata(0, state.msg->input_size, state.msg->input_data);
+            // state.symbolic.returndata = nullptr;
+            // state.symbolic.returndata_size = 0;
+            state.symbolic.set_calldata(state.msg->input_size, state.msg->input_data);
         }
 
         if (msg.depth < 1024)

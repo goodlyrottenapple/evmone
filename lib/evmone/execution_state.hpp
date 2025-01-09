@@ -82,6 +82,20 @@ public:
     {
         return m_stack_space.get() - 1;
     }
+
+    void reset()
+    {
+        if constexpr (isSymbolic)
+        {
+            for (size_t i = 0; i < limit; i++)
+            {
+                StackItem<isSymbolic>* ptr = &static_cast<StackItem<isSymbolic>*>(m_stack_space.get())[i];
+                ptr->sval.drop();
+                ptr->val = 0;
+            }
+            
+        }
+    }
 };
 
 
