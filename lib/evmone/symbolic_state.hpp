@@ -473,13 +473,13 @@ public:
     }
 
 
-    // inline void update_memory(size_t dst, size_t s, const uint8_t* ptr)
-    // {
-    //     for (size_t i = 0; i < s; i++)
-    //     {
-    //         memory[dst+i] = ptr[i];
-    //     }
-    // }
+    inline void update_memory(size_t dst, size_t s, const uint8_t* ptr)
+    {
+        for (size_t i = 0; i < s; i++)
+        {
+            memory[dst+i] = ptr[i];
+        }
+    }
 
     inline SymbolicStackItemPtr keccak256_slice(size_t src, size_t size)
     {
