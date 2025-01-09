@@ -30,7 +30,7 @@ private:
     ArenaAllocator arena;
     std::vector<SymbolicRequirement> requirements;
     JournaledSymbolicState journaled = JournaledSymbolicState(arena);
-    size_t current_states_size;
+    size_t current_states_size = 0;
 
 public:
     VM() noexcept;

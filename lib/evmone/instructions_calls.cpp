@@ -153,7 +153,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     }
     if constexpr (isSymbolic) 
         if (state.child != nullptr)
-            state.child->symbolic.set_calldata(input_offset, input_size, state.symbolic.memory.data());
+            state.child->symbolic.set_calldata(input_size, &state.symbolic.memory[input_offset]);
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
 
