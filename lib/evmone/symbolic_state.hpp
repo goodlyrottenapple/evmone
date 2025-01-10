@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "memory.hpp"
 #include "symbolic.hpp"
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
@@ -13,75 +14,44 @@
 
 namespace evmone
 {
-static const char zeros [16] {};
-
 struct SymbolicMemoryLocation
 {
     // symbolic = nullptr means the memory location has a concrete value stored in concrete_or_offset
     // otherwise concrete_or_offset an ofset of 0 to 31 bytes into the symbolic value
     rc_ptr_data<SymbolicStackItem>* symbolic;
-    uint8_t concrete_or_offset;
-    uint8_t is_concrete;
+    uint8_t offset;
 
-    inline bool is_conrete()
-    {
-        if (memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) == 0) return true;
-        return symbolic == nullptr;
-    }
-
-    // void zero(bool init = false)
-    // {
-    //     // if(!init && symbolic != nullptr) rc_ptr<SymbolicStackItem>::release(symbolic);
-    //     symbolic = nullptr;
-    //     concrete_or_offset = 0;
-    // }
-
-    // void acquire()
-    // {
-    //     if (memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) == 0) return;
-    //     if(symbolic != nullptr) rc_ptr<SymbolicStackItem>::acquire(symbolic);
-    // }
-
-    SymbolicMemoryLocation &operator=(uint8_t v)
-    {
-        // if(memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) != 0 && symbolic != nullptr) rc_ptr<SymbolicStackItem>::release(symbolic);
-        symbolic = nullptr;
-        concrete_or_offset = v;
-        return *this;
-    }
+    inline bool is_in_concrete_memory();
 
     SymbolicMemoryLocation &operator=(Slice8&& o)
     {
-        // if(memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) != 0 && symbolic != nullptr) rc_ptr<SymbolicStackItem>::release(symbolic);
-        if(o.symbolic.raw() != nullptr)
-        {
-            assert(o.concrete_or_offset < 32);
-            assert(StackItem<true>::is_symbolic(o.symbolic));
-            concrete_or_offset = o.concrete_or_offset;
-            symbolic = o.symbolic.raw();
-            rc_ptr<SymbolicStackItem>::lock(symbolic);
-        }
-        else
-        {
-            concrete_or_offset = o.concrete_or_offset;
-            symbolic = nullptr;
-        }
+        assert(o.symbolic.raw() != nullptr);
+        assert(o.concrete_or_offset < 32);
+        assert(StackItem<true>::is_symbolic(o.symbolic));
+        offset = o.concrete_or_offset;
+        symbolic = o.symbolic.raw();
         return *this;
     }
 
-    uint8_t get_concrete()
+    void set_concrete()
     {
-        assert(is_conrete());
-        return concrete_or_offset;
+        memset(this, 0, sizeof(SymbolicMemoryLocation));
     }
 
     Slice8 get_symbolic()
     {
-        if (memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) == 0) return {rc_ptr<SymbolicStackItem>(), 0};
-        if(symbolic != nullptr) rc_ptr<SymbolicStackItem>::acquire(symbolic);
-        return {rc_ptr(symbolic), concrete_or_offset};
+        assert (!is_in_concrete_memory());
+        return {rc_ptr(symbolic), offset};
     }
 };
+
+// can be used to check if an EVM word sized chunk of symbolic memory only contains concrete values
+static const char zeros [sizeof(SymbolicMemoryLocation)*32] {};
+
+inline bool SymbolicMemoryLocation::is_in_concrete_memory()
+{
+    return std::memcmp(this, zeros, sizeof(SymbolicMemoryLocation)) == 0;
+}
 
 
 struct FreeDeleter
@@ -101,9 +71,9 @@ public:
     SymbolicMemory() noexcept { }
 };
 
-template<>
-class SymbolicMemory<true>
+class BaseSymbolicMemory
 {
+private:
     /// The size of allocation "page".
     static constexpr size_t page_size = 4 * 1024;
 
@@ -127,7 +97,7 @@ class SymbolicMemory<true>
 
 public:
     /// Creates Memory object with initial capacity allocation.
-    SymbolicMemory() noexcept { allocate_capacity(); }
+    BaseSymbolicMemory() noexcept { allocate_capacity(); }
 
     SymbolicMemoryLocation& operator[](size_t index) noexcept { return m_data[index]; }
 
@@ -137,10 +107,10 @@ public:
     /// Grows the memory to the given size. The extent is filled with zeros.
     ///
     /// @param new_size  New memory size. Must be larger than the current size and multiple of 32.
-    void grow(size_t new_size) noexcept
+    void grow(size_t new_size, bool strict = true) noexcept
     {
         // Restriction for future changes. EVM always has memory size as multiple of 32 bytes.
-        INTX_REQUIRE(new_size % 32 == 0);
+        INTX_REQUIRE(!strict || (new_size % 32 == 0));
 
         // Allow only growing memory. Include hint for optimizing compiler.
         INTX_REQUIRE(new_size > m_size);
@@ -156,20 +126,8 @@ public:
             }
 
             allocate_capacity();
-            // for (size_t i = m_size; i < m_capacity; i++)
-            // {
-            //     m_data[i].zero(true);
-            // }
         } 
         memset(&m_data[m_size], 0, (new_size - m_size) * sizeof(SymbolicMemoryLocation));
-        // if (m_size_initialised < new_size)
-        // {
-        //     for (size_t i = m_size_initialised; i < new_size; i++)
-        //     {
-        //         m_data[i].zero(true);
-        //     }
-        //     m_size_initialised = new_size;
-        // }
         m_size = new_size;
     }
 
@@ -178,6 +136,37 @@ public:
     {
         m_size = 0;
     }
+
+
+    inline void set(size_t dst, size_t size, SymbolicMemoryLocation* m)
+    {
+        std::memcpy(&m_data[dst], m, sizeof(SymbolicMemoryLocation) * size);
+    }
+
+    inline void set_concrete(size_t dst, size_t size)
+    {
+        std::memset(&m_data[dst], 0, sizeof(SymbolicMemoryLocation) * size);
+    }
+
+    inline bool is_concrete_evm_word(size_t index)
+    {
+        return std::memcmp(&m_data[index], zeros, 32) == 0;
+    }
+
+    bool is_concrete(size_t index, size_t size)
+    {
+        assert(index+size <= m_size);
+        size_t i = 0;
+        for (; i + 32 < size; i = i + 32)
+            if(!is_concrete_evm_word(index + i)) return false;
+        return std::memcmp(&m_data[index + i], zeros, size - i) == 0;
+    }
+};
+
+
+template<>
+class SymbolicMemory<true> : public BaseSymbolicMemory
+{
 };
 
 using SymbolicRequirements = std::vector<SymbolicRequirement>;
@@ -298,11 +287,64 @@ public:
 struct SymbolicCalldata
 {
     bool is_concrete;
-    union {
-        SymbolicMemoryLocation* symbolic;
-        const uint8_t* concrete;
-    };
+    SymbolicMemoryLocation* symbolic;
+    const uint8_t* concrete;
     size_t size;
+
+    inline void clear()
+    {
+        is_concrete = true;
+        size = 0;
+    }
+
+    inline void set(size_t s, SymbolicMemoryLocation* sm, const uint8_t* m)
+    {
+        is_concrete = false;
+        symbolic = sm;
+        concrete = m;
+        size = s;
+    }
+
+    inline void set_concrete(size_t s, const uint8_t* m)
+    {
+        is_concrete = true;
+        concrete = m;
+        size = s;
+    }
+};
+
+class SymbolicReturndata : public BaseSymbolicMemory
+{
+public:
+    bool is_concrete = true;
+    size_t concrete_size = 0;
+
+    [[nodiscard]] size_t size() const noexcept
+    {
+        if (is_concrete) return concrete_size;
+        return BaseSymbolicMemory::size();
+    }
+
+    void clear()
+    {
+        BaseSymbolicMemory::clear();
+        is_concrete = true;
+        concrete_size = 0;
+    }
+
+    void set_concrete(size_t size)
+    {
+        clear();
+        concrete_size = size;
+    }
+
+    void set(size_t size, const SymbolicMemoryLocation* m)
+    {
+        clear();
+        grow(size, false);
+        is_concrete = false;
+        std::memcpy(data(), m, sizeof(SymbolicMemoryLocation) * size);
+    }
 };
 
 template <bool isSymbolic>
@@ -325,13 +367,11 @@ public:
     ArenaAllocator& arena;
     SymbolicRequirements& requirements;
     JournaledSymbolicState& journaled;
-    evmc::address address;
     SymbolicMemory<true> memory;
     SymbolicStackItemPtr caller;
     SymbolicStackItemPtr callvalue;
-    SymbolicCalldata calldata {true, nullptr, 0};
-    SymbolicMemoryPtr returndata = nullptr;
-    size_t returndata_size = 0;
+    SymbolicCalldata calldata {true, nullptr, nullptr, 0};
+    SymbolicReturndata returndata;
 
     SymbolicState(ArenaAllocator& a, SymbolicRequirements& r, JournaledSymbolicState& j) : arena{a}, requirements{r}, journaled{j} {}
 
@@ -344,96 +384,24 @@ public:
             requirements.push_back(SymbolicRequirement{Req::equal,i.sval, i.val});
     }
 
-    // static inline void reset_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
-    // {
-    //     for (size_t i = 0; i < size; i++)
-    //     {
-    //         m[i].zero();
-    //     }
-    // }
-
-    // static inline void acquire_symbolic_memory_ptr(SymbolicMemoryLocation* m, size_t size)
-    // {
-    //     for (size_t i = 0; i < size; i++)
-    //     {
-    //         m[i].acquire();
-    //     }
-    // }
-
-    static void set_(SymbolicMemoryPtr& dst, size_t& dst_size, size_t src_offset, size_t src_size, const uint8_t* src)
-    {
-        // if(dst) reset_symbolic_memory_ptr(dst.get(), dst_size);
-        dst_size = src_size;
-        if(src_size > 0)
-        {
-            dst.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(dst.release(), sizeof(SymbolicMemoryLocation) * src_size)));
-            // memset(dst.get(), 0, src_size * sizeof(SymbolicMemoryLocation));
-            for (size_t i = 0; i < src_size; i++)
-            {
-                // dst[i].zero(true);
-                dst[i] = src[i+src_offset];
-            }
-        }
-        else
-            dst = nullptr;
-    }
-
-    void set_(SymbolicMemoryPtr& dst, size_t& dst_size, size_t src_offset, size_t src_size, const SymbolicMemoryLocation* src)
-    {
-        // if(dst) reset_symbolic_memory_ptr(dst.get(), dst_size);
-        dst_size = src_size;
-        if(src_size > 0)
-        {
-            dst.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(dst.release(), sizeof(SymbolicMemoryLocation) * src_size)));
-            std::memcpy(dst.get(), &src[src_offset], sizeof(SymbolicMemoryLocation) * src_size);
-            // acquire_symbolic_memory_ptr(dst.get(), dst_size);
-        }
-        else
-            dst = nullptr;
-    }
-
-    inline void set_calldata()
-    {
-        calldata.is_concrete = true;
-        calldata.concrete = nullptr;
-        calldata.size = 0;
-        // set_(calldata, calldata_size, 0, 0, (uint8_t*)nullptr);
-    }
-
-    inline void set_calldata(size_t size, SymbolicMemoryLocation* m)
-    {
-        calldata.is_concrete = false;
-        calldata.symbolic = m;
-        calldata.size = size;
-    }
-
-    inline void set_calldata(size_t size, const uint8_t* m)
-    {
-        calldata.is_concrete = true;
-        calldata.concrete = m;
-        calldata.size = size;
-    }
-
     inline SymbolicStackItemPtr load_calldata(size_t begin, size_t end)
     {
         assert((end - begin) <= 32);
         assert(end <= calldata.size);
-        if (calldata.is_concrete) return rc_ptr<SymbolicStackItem>();
+        if (calldata.is_concrete || std::memcmp(&calldata.symbolic[begin], zeros, end-begin) == 0) return rc_ptr<SymbolicStackItem>();
 
         Slice&& symbolic {};
-        bool all_pure = true;
         bool is_full_symbolic_word = (end - begin) == 32;
         rc_ptr_data<SymbolicStackItem>* symbolic_ptr = nullptr;
 
         for (size_t i = 0; i < (end - begin); ++i)
         {
-            if(calldata.symbolic[begin + i].is_conrete()){
-                symbolic.word[i] = calldata.symbolic[begin + i].get_symbolic();
+            if(calldata.symbolic[begin + i].is_in_concrete_memory()){
+                symbolic.word[i] = {nullptr, calldata.concrete[begin+i]};
                 is_full_symbolic_word = false;
             }
             else
             {
-                all_pure = false;
                 symbolic.word[i] = calldata.symbolic[begin + i].get_symbolic();
                 if(symbolic_ptr == nullptr) symbolic_ptr = symbolic.word[i].symbolic.raw();
                 is_full_symbolic_word = 
@@ -442,87 +410,53 @@ public:
                     symbolic.word[i].concrete_or_offset == i;
             }
         }
-        if(all_pure)
-        {
-            return rc_ptr<SymbolicStackItem>();
-        }
-        else if(is_full_symbolic_word) return symbolic.word[0].symbolic;
+
+        if(is_full_symbolic_word) return symbolic.word[0].symbolic;
         else return StackItem<true>::make_symbolic(arena, symbolic);
     }
 
-    inline void set_returndata()
+    void set_(SymbolicMemoryPtr& dst, size_t& dst_size, size_t src_offset, size_t src_size, const SymbolicMemoryLocation* src)
     {
-        set_(returndata, returndata_size, 0, 0, (uint8_t*)nullptr);
-    }
-
-    inline void set_returndata(size_t offset, size_t size, const SymbolicMemoryLocation* m)
-    {
-        set_(returndata, returndata_size, offset, size, m);
-    }
-
-    inline void set_returndata(size_t offset, size_t size, const uint8_t* m)
-    {
-        set_(returndata, returndata_size, offset, size, m);
-    }
-
-    inline void update_memory(size_t dst, size_t size, SymbolicMemoryLocation* m)
-    {
-        // reset_symbolic_memory_ptr(&memory[dst], size);
-        std::memcpy(&memory[dst], m, sizeof(SymbolicMemoryLocation) * size);
-        // acquire_symbolic_memory_ptr(m, size);
-    }
-
-
-    inline void update_memory(size_t dst, size_t s, const uint8_t* ptr)
-    {
-        for (size_t i = 0; i < s; i++)
+        dst_size = src_size;
+        if(src_size > 0)
         {
-            memory[dst+i] = ptr[i];
+            dst.reset(static_cast<SymbolicMemoryLocation*>(std::realloc(dst.release(), sizeof(SymbolicMemoryLocation) * src_size)));
+            std::memcpy(dst.get(), &src[src_offset], sizeof(SymbolicMemoryLocation) * src_size);
         }
+        else
+            dst = nullptr;
     }
 
-    inline SymbolicStackItemPtr keccak256_slice(size_t src, size_t size)
+    inline SymbolicStackItemPtr keccak256_slice(const uint8_t* concrete_memory, size_t src, size_t size)
     {
-        if(size == 0) return SymbolicStackItemPtr();
+        if(size == 0 || memory.is_concrete(src, size)) return SymbolicStackItemPtr();
         auto data = std::make_unique<Slice8[]>(size);
-        bool all_concrete = true;
         for (size_t i = 0; i < size; i++)
         {
-            data[i] = memory[src+i].get_symbolic();
-            if(!memory[src+i].is_conrete()) all_concrete = false;
+            if (memory[src+i].is_in_concrete_memory())
+                data[i] = {nullptr, concrete_memory[src+i]};
+            else
+                data[i] = memory[src+i].get_symbolic();
         }
-        if(all_concrete) return rc_ptr<SymbolicStackItem>();
-        else return StackItem<true>::make_symbolic(arena, Keccak256 {std::move(data), size});
+        return StackItem<true>::make_symbolic(arena, Keccak256 {std::move(data), size});
     }
 
-    inline void reset_memory(size_t index, size_t size)
+    inline SymbolicStackItemPtr load_memory(const uint8_t* concrete_memory, size_t begin)
     {
-        memset(&memory[index], 0 , size * sizeof(SymbolicMemoryLocation));
-        // reset_symbolic_memory_ptr(&memory[index], size);
-    }
-
-
-    inline void reset_memory() noexcept
-    {
-        memory.clear();
-    }
-
-    inline SymbolicStackItemPtr load_memory(size_t begin)
-    {
+        if (memory.is_concrete_evm_word(begin)) return rc_ptr<SymbolicStackItem>();
         Slice&& symbolic {};
-        bool all_pure = true;
         bool is_full_symbolic_word = true;
         rc_ptr_data<SymbolicStackItem>* symbolic_ptr = nullptr;
 
         for (size_t i = 0; i < 32; ++i)
         {
-            if(memory[begin + i].is_conrete()){
-                symbolic.word[i] = memory[begin + i].get_symbolic();
+            if (memory[begin+i].is_in_concrete_memory())
+            {
+                symbolic.word[i] = {nullptr, concrete_memory[begin+i]};
                 is_full_symbolic_word = false;
             }
             else
             {
-                all_pure = false;
                 symbolic.word[i] = memory[begin + i].get_symbolic();
                 if(symbolic_ptr == nullptr) symbolic_ptr = symbolic.word[i].symbolic.raw();
                 is_full_symbolic_word = 
@@ -531,11 +465,7 @@ public:
                     symbolic.word[i].concrete_or_offset == 31-i;
             }
         }
-        if(all_pure)
-        {
-            return rc_ptr<SymbolicStackItem>();
-        }
-        else if(is_full_symbolic_word) return symbolic.word[0].symbolic;
+        if(is_full_symbolic_word) return symbolic.word[0].symbolic;
         else return StackItem<true>::make_symbolic(arena, symbolic);
     }
 };

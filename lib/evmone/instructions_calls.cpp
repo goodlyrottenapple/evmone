@@ -71,40 +71,47 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         if(calling_precompile)
         {
             const auto current_memory_size = state.memory.size();
-            bool current_all_concrete = true;
-            uint8_t concrete_data[32];
-            memset(concrete_data, 0, sizeof(concrete_data));
-            Slice symbolic_data;
-            for (size_t i = 0; i < 32; i++)
+            const auto input_end = std::min(current_memory_size, input_offset+input_size);
+            if(input_offset <= input_end && !state.symbolic.memory.is_concrete(input_offset, input_end - input_offset))
             {
-                symbolic_data.word[i] = Slice8 {SymbolicStackItemPtr(), 0};
-            }
-            
-            size_t i = 0;
-            while (i+input_offset < std::min(current_memory_size, input_offset+input_size)) {
-                auto current_index = i % 32;
-                concrete_data[current_index] = state.memory[i+input_offset];
-                if(state.symbolic.memory[i+input_offset].is_conrete())
-                    assert(state.memory[i+input_offset] == state.symbolic.memory[i+input_offset].get_concrete());
-                else 
-                    current_all_concrete = false;
-                symbolic_data.word[current_index] = state.symbolic.memory[i+input_offset].get_symbolic();
-
-                i++;
-                if(i%32 == 0 || i+input_offset+1 == std::min(current_memory_size, input_offset+input_size)) 
+                bool current_all_concrete = true;
+                uint8_t concrete_data[32];
+                memset(concrete_data, 0, sizeof(concrete_data));
+                Slice symbolic_data;
+                for (size_t i = 0; i < 32; i++)
                 {
-                    if(!current_all_concrete)
-                        state.symbolic.requirements.push_back(
-                            SymbolicRequirement{
-                                Req::equal, 
-                                StackItem<isSymbolic>::make_symbolic(*stack.arena, symbolic_data), 
-                                intx::be::unsafe::load<uint256>(concrete_data) 
-                            });
-                    current_all_concrete = true;
-                    memset(concrete_data, 0, sizeof(concrete_data));
-                    for (size_t j = 0; j < 32; j++)
+                    symbolic_data.word[i] = Slice8 {SymbolicStackItemPtr(), 0};
+                }
+
+                size_t i = 0;
+                while (i+input_offset < input_end) 
+                {
+                    auto current_index = i % 32;
+                    concrete_data[current_index] = state.memory[i+input_offset];
+                    if(state.symbolic.memory[i+input_offset].is_in_concrete_memory())
+                        symbolic_data.word[current_index] = {nullptr, state.memory[i+input_offset]};
+                    else
                     {
-                        symbolic_data.word[j] = Slice8 {SymbolicStackItemPtr(), 0};
+                        current_all_concrete = false;
+                        symbolic_data.word[current_index] = state.symbolic.memory[i+input_offset].get_symbolic();
+                    }
+
+                    i++;
+                    if(i%32 == 0 || i+input_offset+1 == input_end)
+                    {
+                        if(!current_all_concrete)
+                            state.symbolic.requirements.push_back(
+                                SymbolicRequirement{
+                                    Req::equal,
+                                    StackItem<isSymbolic>::make_symbolic(*stack.arena, symbolic_data),
+                                    intx::be::unsafe::load<uint256>(concrete_data)
+                                });
+                        current_all_concrete = true;
+                        memset(concrete_data, 0, sizeof(concrete_data));
+                        for (size_t j = 0; j < 32; j++)
+                        {
+                            symbolic_data.word[j] = Slice8 {SymbolicStackItemPtr(), 0};
+                        }
                     }
                 }
             }
@@ -114,7 +121,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
-    if constexpr (isSymbolic) state.symbolic.returndata = nullptr;
+    if constexpr (isSymbolic) state.symbolic.returndata.clear();
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(dst) == EVMC_ACCESS_COLD)
     {
@@ -153,7 +160,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     }
     if constexpr (isSymbolic) 
         if (state.child != nullptr)
-            state.child->symbolic.set_calldata(input_size, &state.symbolic.memory[input_offset]);
+            state.child->symbolic.calldata.set(input_size, &state.symbolic.memory[input_offset], &state.memory[input_offset]);
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
 
@@ -197,17 +204,17 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     {
         if(calling_precompile)
         {
-            state.symbolic.set_returndata(output_offset, result.output_size, result.output_data);
+            state.symbolic.returndata.set_concrete(result.output_size);
         }
         else 
         {
             if (state.child && state.child->output_size != 0)
             {
                 assert(state.child->output_size == result.output_size);
-                state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
+                state.symbolic.returndata.set(state.child->output_size, &state.child->symbolic.memory[state.child->output_offset]);
             }
             else
-                state.symbolic.set_returndata();
+                state.symbolic.returndata.clear();
         }
     }
     stack.top() = result.status_code == EVMC_SUCCESS;
@@ -218,9 +225,9 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         if constexpr (isSymbolic)
         {
             if(calling_precompile)
-                state.symbolic.update_memory(output_offset, copy_size, (uint8_t*)result.output_data);
+                state.symbolic.memory.set_concrete(output_offset, copy_size);
             else
-                state.symbolic.update_memory(output_offset, copy_size, state.child->symbolic.memory.data());
+                state.symbolic.memory.set(output_offset, copy_size, state.child->symbolic.memory.data());
         }
     }
     const auto gas_used = msg.gas - result.gas_left;
@@ -432,7 +439,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
             // and passes them via the code and code_size in
             // evmc_result execute(evmc_vm* c_vm, const evmc_host_interface* host, ... const uint8_t* code, size_t code_size)
             // feels VERY hacky
-            state.child->symbolic.set_calldata();
+            state.child->symbolic.calldata.clear();
     msg.sender = state.msg->recipient;
     msg.depth = state.msg->depth + 1;
     msg.create2_salt = intx::be::store<evmc::bytes32>(has_salt ? msalt.value().val : uint256{});
@@ -448,9 +455,9 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if constexpr (isSymbolic)
     {
         if (state.child && state.child->output_size != 0)
-            state.symbolic.set_returndata(state.child->output_offset, state.child->output_size, state.child->symbolic.memory.data());
+            state.symbolic.returndata.set(state.child->output_size, &state.child->symbolic.memory[state.child->output_offset]);
         else
-            state.symbolic.set_returndata();
+            state.symbolic.returndata.clear();
     }
 
 

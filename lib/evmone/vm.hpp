@@ -50,8 +50,8 @@ public:
                 s.symbolic.memory.clear();
                 s.symbolic.caller.drop();
                 s.symbolic.callvalue.drop();
-                s.symbolic.set_calldata();
-                s.symbolic.set_returndata();
+                s.symbolic.calldata.clear();
+                s.symbolic.returndata.clear();
                 s.status = EVMC_SUCCESS;
                 s.stack_space.reset();
             }

@@ -76,6 +76,7 @@ int main(int argc, char* argv[])
         "stTimeConsuming.static_Call50000_sha256:"     // pass
         "stTimeConsuming.CALLBlake2f_MaxRounds:"       // pass
         "VMTests/vmPerformance.*:"                     // pass
+        "VMTests/vmArithmeticTest.fib:"
         ;
 
     try

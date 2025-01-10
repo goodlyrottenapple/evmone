@@ -26,6 +26,7 @@ add_library(evmone
     instructions_storage.cpp
     instructions_traits.hpp
     instructions_xmacro.hpp
+    memory.hpp
     rc_ptr.hpp
     symbolic.cpp
     symbolic.hpp

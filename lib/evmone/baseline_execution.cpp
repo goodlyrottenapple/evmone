@@ -312,7 +312,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
 
     if constexpr (isSymbolic){
 
-        // only set the symbolic calldata and if this is a 0 depth call.
+        // only set the symbolic calldata if this is a 0 depth call.
         // for CALL opcodes, the symbolic calldata and returndata state of the child should be set up by the calling function.
         if(msg.depth == 0)
         {
@@ -320,7 +320,7 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
             state.symbolic.requirements.clear();
             // state.symbolic.returndata = nullptr;
             // state.symbolic.returndata_size = 0;
-            state.symbolic.set_calldata(state.msg->input_size, state.msg->input_data);
+            state.symbolic.calldata.set_concrete(state.msg->input_size, state.msg->input_data);
         }
 
         if (msg.depth < 1024)

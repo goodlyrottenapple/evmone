@@ -475,7 +475,7 @@ inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionS
     size.val = intx::be::load<uint256>(ethash::keccak256(data, s));
 
     if constexpr (isSymbolic)
-        stack[1].sval = state.symbolic.keccak256_slice(i, s);
+        stack[1].sval = state.symbolic.keccak256_slice(state.memory.data(), i, s);
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -592,15 +592,15 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         if constexpr (isSymbolic)
         {
             assert(state.msg->input_size == state.symbolic.calldata.size);
-            if (state.symbolic.calldata.is_concrete) state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata.concrete[src]);
-            else state.symbolic.update_memory(dst, copy_size, &state.symbolic.calldata.symbolic[src]);
+            if (state.symbolic.calldata.is_concrete) state.symbolic.memory.set_concrete(dst, copy_size);
+            else state.symbolic.memory.set(dst, copy_size, &state.symbolic.calldata.symbolic[src]);
         }
     }        
 
     if (s - copy_size > 0)
     {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-        if constexpr (isSymbolic) state.symbolic.reset_memory(dst + copy_size, s - copy_size);
+        if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -638,12 +638,12 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
         std::memcpy(&state.memory[dst], &state.original_code[src], copy_size);
 
         if constexpr (isSymbolic)
-            state.symbolic.update_memory(dst, copy_size, (uint8_t*)(&state.original_code[src]));
+            state.symbolic.memory.set_concrete(dst, copy_size);
     }
     if (s - copy_size > 0)
     {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-        if constexpr (isSymbolic) state.symbolic.reset_memory(dst + copy_size, s - copy_size);
+        if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -729,12 +729,12 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
         const auto num_bytes_copied = state.host.copy_code(addr, src, &state.memory[dst], s);
 
         if constexpr (isSymbolic)
-            state.symbolic.update_memory(dst, s, &state.memory[dst]);
+            state.symbolic.memory.set_concrete(dst, s);
 
         if (const auto num_bytes_to_clear = s - num_bytes_copied; num_bytes_to_clear > 0)
         {
             std::memset(&state.memory[dst + num_bytes_copied], 0, num_bytes_to_clear);
-            if constexpr (isSymbolic) state.symbolic.reset_memory(dst + num_bytes_copied, num_bytes_to_clear);
+            if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + num_bytes_copied, num_bytes_to_clear);
         }
     }
     return {EVMC_SUCCESS, gas_left};
@@ -814,8 +814,9 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
             if constexpr (isSymbolic) {
-                assert(state.return_data.size() == state.symbolic.returndata_size);
-                state.symbolic.update_memory(dst, s, &state.symbolic.returndata[src]);
+                assert(state.return_data.size() == state.symbolic.returndata.size());
+                if (state.symbolic.returndata.is_concrete) state.symbolic.memory.set_concrete(dst, s);
+                else state.symbolic.memory.set(dst, s, &state.symbolic.returndata[src]);
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
             }
@@ -915,7 +916,7 @@ inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
 
     auto idx = static_cast<size_t>(index.val);
     index.val = intx::be::unsafe::load<uint256>(&state.memory[idx]);
-    if constexpr (isSymbolic) index.sval = state.symbolic.load_memory(idx);
+    if constexpr (isSymbolic) index.sval = state.symbolic.load_memory(state.memory.data(), idx);
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -932,12 +933,8 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
     if constexpr (isSymbolic)
     {
-        if(value.is_pure()) {
-            for (size_t i = 0; i < 32; i++)
-            {
-                state.symbolic.memory[static_cast<size_t>(index.val)+i] = state.memory[static_cast<size_t>(index.val)+i];
-            }
-        }
+        if(value.is_pure()) 
+            state.symbolic.memory.set_concrete(static_cast<size_t>(index.val), 32);
         else 
         {
             for (size_t i = 0; i < 32; i++)
@@ -962,7 +959,7 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
     if constexpr (isSymbolic)
     {
-        if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)] = state.memory[static_cast<size_t>(index.val)];
+        if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)].set_concrete();
         else state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, 31};
     }
     return {EVMC_SUCCESS, gas_left};
