@@ -70,14 +70,6 @@ public:
         {
             cache[i] = nullptr;
         }
-
-        for (char* p : blocks)
-            delete[] p;
-        
-        block = new char[block_size];
-        blocks.clear();
-        blocks.push_back(block);
-        
     }
 
     template<typename T>

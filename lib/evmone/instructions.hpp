@@ -924,7 +924,7 @@ template <bool isSymbolic>
 inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& index = stack[0];
-    const auto& value = stack[1];
+    auto& value = stack[1];
     if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index);
 
     if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
@@ -937,6 +937,7 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
             state.symbolic.memory.set_concrete(static_cast<size_t>(index.val), 32);
         else 
         {
+            value.sval.lock();
             for (size_t i = 0; i < 32; i++)
             {
                 state.symbolic.memory[static_cast<size_t>(index.val)+i] = Slice8 {value.sval, (uint8_t)(31-i)};
@@ -950,7 +951,7 @@ template <bool isSymbolic>
 inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& index = stack[0];
-    const auto& value = stack[1];
+    auto& value = stack[1];
     if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index);
 
     if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 1))
@@ -960,7 +961,10 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     if constexpr (isSymbolic)
     {
         if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)].set_concrete();
-        else state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, 31};
+        else {
+            value.sval.lock();
+            state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, 31};
+        }
     }
     return {EVMC_SUCCESS, gas_left};
 }
