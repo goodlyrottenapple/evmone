@@ -246,13 +246,15 @@ public:
     void update_(SymbolicStorageMap& m, JournalEntryType&& type, evmc::address addr, evmc_bytes32 k, StackItem<true> v)
     {
         std::optional<SymbolicStackItemPtr>&& prev_value = std::nullopt;
-        if (auto search = m[addr].find(k); search != m[addr].end())
+        const auto [it, missing] = m[addr].try_emplace(k);
+
+        if (!missing)
         {
-            prev_value = search->second;
+            prev_value = it->second;
         }
         journal.emplace_back(addr, k, prev_value, type);
-        if(v.is_pure()) m[addr][k] = StackItem<true>::make_symbolic(arena, v.val);
-        else m[addr][k] = v.sval;
+        if(v.is_pure()) it->second = StackItem<true>::make_symbolic(arena, v.val);
+        else it->second = v.sval;
     }
 
     inline void update_store(evmc::address addr, evmc::bytes32 k, StackItem<true> v)

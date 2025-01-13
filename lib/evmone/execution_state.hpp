@@ -92,7 +92,6 @@ public:
             {
                 StackItem<isSymbolic>* ptr = &static_cast<StackItem<isSymbolic>*>(m_stack_space.get())[i];
                 ptr->sval.drop();
-                ptr->val = 0;
             }
             
         }

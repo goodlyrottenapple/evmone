@@ -54,13 +54,11 @@ public:
         }
         else 
         {
-            std::memset((void*)m_top, 1, sizeof(StackItem<isSymbolic>));
             *m_top = {value};
         }    
     }
     void push(const StackItem<isSymbolic>& value) noexcept { 
         ++m_top;
-        if constexpr (!isSymbolic) std::memset((void*)m_top, 2, sizeof(StackItem<isSymbolic>));
         *m_top = value; 
     }
 };
