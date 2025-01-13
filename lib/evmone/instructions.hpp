@@ -97,11 +97,11 @@ inline constexpr int64_t copy_cost(uint64_t size_in_bytes) noexcept
 /// Grows EVM memory and checks its cost.
 ///
 /// This function should not be inlined because this may affect other inlining decisions:
-/// - making check_memory<isSymbolic>() too costly to inline,
+/// - making check_memory<isSymbolic, isSymbolicEnabled>() too costly to inline,
 /// - making mload()/mstore()/mstore8() too costly to inline.
 ///
 /// TODO: This function should be moved to Memory class.
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 [[gnu::noinline]] inline int64_t grow_memory(
     int64_t gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, uint64_t new_size) noexcept
 {
@@ -118,17 +118,17 @@ template <bool isSymbolic>
     if (gas_left >= 0) [[likely]]
     {
         memory.grow(static_cast<size_t>(new_words * word_size));
-        if constexpr (isSymbolic) smemory.grow(static_cast<size_t>(new_words * word_size));
+        if constexpr (isSymbolic && isSymbolicEnabled) smemory.grow(static_cast<size_t>(new_words * word_size));
     }
     return gas_left;
 }
 
 /// Check memory requirements of a reasonable size.
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline bool check_memory(
     int64_t& gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, const uint256& offset, uint64_t size) noexcept
 {
-    if constexpr (isSymbolic) assert(memory.size() == smemory.size());
+    if constexpr (isSymbolic && isSymbolicEnabled) assert(memory.size() == smemory.size());
     // TODO: This should be done in intx.
     // There is "branchless" variant of this using | instead of ||, but benchmarks difference
     // is within noise. This should be decided when moving the implementation to intx.
@@ -137,12 +137,12 @@ inline bool check_memory(
 
     const auto new_size = static_cast<uint64_t>(offset) + size;
     if (new_size > memory.size())
-        gas_left = grow_memory<isSymbolic>(gas_left, memory, smemory, new_size);
+        gas_left = grow_memory<isSymbolic, isSymbolicEnabled>(gas_left, memory, smemory, new_size);
     return gas_left >= 0;  // Always true for no-grow case.
 }
 
 /// Check memory requirements for "copy" instructions.
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline bool check_memory(
     int64_t& gas_left, Memory& memory, SymbolicMemory<isSymbolic>& smemory, const uint256& offset, const uint256& size) noexcept
 {
@@ -155,7 +155,7 @@ inline bool check_memory(
     if (((size[3] | size[2] | size[1]) != 0) || (size[0] > max_buffer_size))
         return false;
 
-    return check_memory<isSymbolic>(gas_left, memory, smemory, offset, static_cast<uint64_t>(size));
+    return check_memory<isSymbolic, isSymbolicEnabled>(gas_left, memory, smemory, offset, static_cast<uint64_t>(size));
 }
 
 namespace instr::core
@@ -171,8 +171,8 @@ namespace instr::core
 /// after execution. The adjustment must be performed by the caller.
 template <bool isSymbolic>
 inline void noop(StackTop<isSymbolic> /*stack*/) noexcept {}
-template <bool isSymbolic> inline constexpr auto pop = noop<isSymbolic>;
-template <bool isSymbolic> inline constexpr auto jumpdest = noop<isSymbolic>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto pop = noop<isSymbolic>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto jumpdest = noop<isSymbolic>;
 
 template <bool isSymbolic, evmc_status_code Status>
 inline TermResult stop_impl(
@@ -180,73 +180,73 @@ inline TermResult stop_impl(
 {
     return {Status, gas_left};
 }
-template <bool isSymbolic> inline constexpr auto stop = stop_impl<isSymbolic,EVMC_SUCCESS>;
-template <bool isSymbolic> inline constexpr auto invalid = stop_impl<isSymbolic,EVMC_INVALID_INSTRUCTION>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto stop = stop_impl<isSymbolic,EVMC_SUCCESS>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto invalid = stop_impl<isSymbolic,EVMC_INVALID_INSTRUCTION>;
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void add(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::add, stack[0], stack[1]);
     stack[1].val = stack[0].val + stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void mul(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::mul, stack[0], stack[1]);
     stack[1].val = stack[0].val * stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void sub(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::sub, stack[0], stack[1]);
     stack[1].val = stack[0].val - stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void div(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::div, stack[0], stack[1]);
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val / v.val : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void sdiv(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::sdiv, stack[0], stack[1]);
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).quot : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void mod(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::mod, stack[0], stack[1]);
     auto& v = stack[1];
     v.val = v.val != 0 ? stack[0].val % v.val : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void smod(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic && isSymbolicEnabled) 
         stack[1].set_symbolic(*stack.arena, BinOp::smod, stack[0], stack[1]);
     auto& v = stack[1];
     v.val = v.val != 0 ? intx::sdivrem(stack[0].val, v.val).rem : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void addmod(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[2].set_symbolic(*stack.arena, TernOp::addmod, stack[0], stack[1], stack[2]);
     const auto& x = stack[0];
     const auto& y = stack[1];
@@ -254,10 +254,10 @@ inline void addmod(StackTop<isSymbolic> stack) noexcept
     m.val = m.val != 0 ? intx::addmod(x.val, y.val, m.val) : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void mulmod(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[2].set_symbolic(*stack.arena, TernOp::mulmod, stack[0], stack[1], stack[2]);
     const auto& x = stack[0];
     const auto& y = stack[1];
@@ -265,10 +265,10 @@ inline void mulmod(StackTop<isSymbolic> stack) noexcept
     m.val = m.val != 0 ? intx::mulmod(x.val, y.val, m.val) : 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result exp(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::exp, stack[0], stack[1]);
     const auto& base = stack[0];
     auto& exponent = stack[1];
@@ -281,15 +281,15 @@ inline Result exp(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
         return {EVMC_OUT_OF_GAS, gas_left};
 
     exponent.val = intx::exp(base.val, exponent.val);
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic && isSymbolicEnabled) 
         state.symbolic.symbolic_value_matches_concrete(exponent);
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void signextend(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::signextend, stack[0], stack[1]);
     const auto& ext = stack[0];
     auto& x = stack[1];
@@ -322,90 +322,90 @@ inline void signextend(StackTop<isSymbolic> stack) noexcept
     }
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void lt(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::lt, stack[0], stack[1]);
     stack[1].val = stack[0].val < stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void gt(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::gt, stack[0], stack[1]);
     stack[1].val = stack[1].val < stack[0].val; // Arguments are swapped and < is used.
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void slt(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::slt, stack[0], stack[1]);
     stack[1].val = slt(stack[0].val, stack[1].val);
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void sgt(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::sgt, stack[0], stack[1]);
     stack[1].val = slt(stack[1].val, stack[0].val);  // Arguments are swapped and SLT is used.
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void eq(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::eq, stack[0], stack[1]);
     stack[1].val = stack[0].val == stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void iszero(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic && isSymbolicEnabled) 
         stack[0].set_symbolic(*stack.arena, UnOp::iszero, stack[0]); 
     stack[0].val = stack[0].val == 0;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void and_(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::and_, stack[0], stack[1]); 
     stack[1].val = stack[0].val & stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void or_(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::or_, stack[0], stack[1]); 
     stack[1].val = stack[0].val | stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void xor_(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::xor_, stack[0], stack[1]); 
     stack[1].val = stack[0].val ^ stack[1].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void not_(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[0].set_symbolic(*stack.arena, UnOp::not_, stack[0]); 
     stack[0].val = ~ stack[0].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void byte(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::byte, stack[0], stack[1]); 
     const auto& n = stack[0];
     auto& x = stack[1];
@@ -420,26 +420,26 @@ inline void byte(StackTop<isSymbolic> stack) noexcept
     x.val = byte;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void shl(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::shl, stack[0], stack[1]); 
     stack[1].val <<= stack[0].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void shr(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::shr, stack[0], stack[1]); 
     stack[1].val >>= stack[0].val;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void sar(StackTop<isSymbolic> stack) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].set_symbolic(*stack.arena, BinOp::sar, stack[0], stack[1]);
     const auto& y = stack[0];
     auto& x = stack[1];
@@ -451,15 +451,15 @@ inline void sar(StackTop<isSymbolic> stack) noexcept
     x.val = (x.val >> y.val) | (sign_mask << mask_shift);
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& index = stack[0];
     auto& size = stack[1];
 
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto i = static_cast<size_t>(index.val);
@@ -472,23 +472,23 @@ inline Result keccak256(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionS
     auto data = s != 0 ? &state.memory[i] : nullptr;
     size.val = intx::be::load<uint256>(ethash::keccak256(data, s));
 
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         stack[1].sval = state.symbolic.keccak256_slice(state.memory.data(), i, s);
     return {EVMC_SUCCESS, gas_left};
 }
 
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void address(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.msg->recipient));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result balance(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(x);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(x);
     const auto addr = intx::be::trunc<evmc::address>(x.val);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(addr) == EVMC_ACCESS_COLD)
@@ -499,26 +499,26 @@ inline Result balance(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
 
     x.val = intx::be::load<uint256>(state.host.get_balance(addr));
     // TODO do we need some constraint on gas here? probably not...
-    if constexpr (isSymbolic) x.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void origin(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().tx_origin));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void caller(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.msg->sender));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void callvalue(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         // If scallvalue is unset, we are at message depth 0 and the callvalue is statically known 
         // to be the one originating from the transaction, hence we push a pure value. 
         // Otherwise, we are in a nested call where we set scallvalue to be a symbolic value, 
@@ -529,14 +529,14 @@ inline void callvalue(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& st
         stack.push(intx::be::load<uint256>(state.msg->value)); 
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& index = stack[0];
 
     if (state.msg->input_size < index.val) {
         index.val = 0;
-        if constexpr (isSymbolic) index.set_pure();
+        if constexpr (isSymbolic && isSymbolicEnabled) index.set_pure();
     }
     else
     {
@@ -549,7 +549,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
 
         auto loaded = intx::be::load<uint256>(data);
         index.val = loaded;
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
         {
             assert(state.msg->input_size == state.symbolic.calldata.size);
             index.sval = state.symbolic.load_calldata(begin, end);
@@ -557,22 +557,22 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
     }
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void calldatasize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.msg->input_size);
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& mem_index = stack[0];
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     auto dst = static_cast<size_t>(mem_index.val);
@@ -587,7 +587,7 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
     if (copy_size > 0)
     {
         std::memcpy(&state.memory[dst], &state.msg->input_data[src], copy_size);
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
         {
             assert(state.msg->input_size == state.symbolic.calldata.size);
             if (state.symbolic.calldata.is_concrete) state.symbolic.memory.set_concrete(dst, copy_size);
@@ -598,27 +598,27 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
     if (s - copy_size > 0)
     {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-        if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
+        if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
     }
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void codesize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.original_code.size());
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& mem_index = stack[0];
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto code_size = state.original_code.size();
@@ -635,31 +635,31 @@ inline Result codecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
     {
         std::memcpy(&state.memory[dst], &state.original_code[src], copy_size);
 
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
             state.symbolic.memory.set_concrete(dst, copy_size);
     }
     if (s - copy_size > 0)
     {
         std::memset(&state.memory[dst + copy_size], 0, s - copy_size);
-        if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
+        if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.memory.set_concrete(dst + copy_size, s - copy_size);
     }
     return {EVMC_SUCCESS, gas_left};
 }
 
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void gasprice(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().tx_gas_price));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void basefee(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().block_base_fee));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void blobhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& index = stack[0];
@@ -668,16 +668,16 @@ inline void blobhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
     index.val = (index.val < tx.blob_hashes_count) ?
                 intx::be::load<uint256>(tx.blob_hashes[static_cast<size_t>(index.val)]) :
                 0;
-    if constexpr (isSymbolic) index.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) index.set_pure();
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void blobbasefee(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().blob_base_fee));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result extcodesize(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
@@ -690,11 +690,11 @@ inline Result extcodesize(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = state.host.get_code_size(addr);
-    if constexpr (isSymbolic) x.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
 
@@ -704,9 +704,9 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     const auto& input_index = stack[2];
     const auto& size = stack[3];
 
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(addr_index, mem_index, input_index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(addr_index, mem_index, input_index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto s = static_cast<size_t>(size.val);
@@ -726,19 +726,19 @@ inline Result extcodecopy(StackTop<isSymbolic> stack, int64_t gas_left, Executio
         const auto dst = static_cast<size_t>(mem_index.val);
         const auto num_bytes_copied = state.host.copy_code(addr, src, &state.memory[dst], s);
 
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
             state.symbolic.memory.set_concrete(dst, s);
 
         if (const auto num_bytes_to_clear = s - num_bytes_copied; num_bytes_to_clear > 0)
         {
             std::memset(&state.memory[dst + num_bytes_copied], 0, num_bytes_to_clear);
-            if constexpr (isSymbolic) state.symbolic.memory.set_concrete(dst + num_bytes_copied, num_bytes_to_clear);
+            if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.memory.set_concrete(dst + num_bytes_copied, num_bytes_to_clear);
         }
     }
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& index = stack[0];
@@ -756,25 +756,25 @@ inline void returndataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
 
         index.val = intx::be::unsafe::load<uint256>(data);
     }
-    if constexpr (isSymbolic) index.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) index.set_pure();
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void returndatasize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.return_data.size());
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& mem_index = stack[0];
     const auto& input_index = stack[1];
     const auto& size = stack[2];
 
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(mem_index, input_index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     auto dst = static_cast<size_t>(mem_index.val);
@@ -811,7 +811,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
         {
             std::memcpy(&state.memory[dst], &state.return_data[src], s);
 
-            if constexpr (isSymbolic) {
+            if constexpr (isSymbolic && isSymbolicEnabled) {
                 assert(state.return_data.size() == state.symbolic.returndata.size());
                 if (state.symbolic.returndata.is_concrete) state.symbolic.memory.set_concrete(dst, s);
                 else state.symbolic.memory.set(dst, s, &state.symbolic.returndata[src]);
@@ -823,11 +823,11 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(x);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(x);
     const auto addr = intx::be::trunc<evmc::address>(x.val);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(addr) == EVMC_ACCESS_COLD)
@@ -837,16 +837,16 @@ inline Result extcodehash(StackTop<isSymbolic> stack, int64_t gas_left, Executio
     }
 
     x.val = intx::be::load<uint256>(state.host.get_code_hash(addr));
-    if constexpr (isSymbolic) x.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) x.set_pure();
     return {EVMC_SUCCESS, gas_left};
 }
 
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void blockhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& number = stack[0];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(number);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(number);
 
     const auto upper_bound = state.get_tx_context().block_number;
     const auto lower_bound = std::max(upper_bound - 256, decltype(upper_bound){0});
@@ -855,81 +855,81 @@ inline void blockhash(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& st
         (number.val < upper_bound && n >= lower_bound) ? state.host.get_block_hash(n) : evmc::bytes32{};
 
     number.val = intx::be::load<uint256>(header);
-    if constexpr (isSymbolic) number.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) number.set_pure();
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void coinbase(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().block_coinbase));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void timestamp(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     // TODO: Add tests for negative timestamp?
     stack.push(static_cast<uint64_t>(state.get_tx_context().block_timestamp));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void number(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     // TODO: Add tests for negative block number?
     stack.push(static_cast<uint64_t>(state.get_tx_context().block_number));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void prevrandao(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().block_prev_randao));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void gaslimit(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(static_cast<uint64_t>(state.get_tx_context().block_gas_limit));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void chainid(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(intx::be::load<uint256>(state.get_tx_context().chain_id));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void selfbalance(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     // TODO: introduce selfbalance in EVMC?
     stack.push(intx::be::load<uint256>(state.host.get_balance(state.msg->recipient)));
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& index = stack[0];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(index);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     auto idx = static_cast<size_t>(index.val);
     index.val = intx::be::unsafe::load<uint256>(&state.memory[idx]);
-    if constexpr (isSymbolic) index.sval = state.symbolic.load_memory(state.memory.data(), idx);
+    if constexpr (isSymbolic && isSymbolicEnabled) index.sval = state.symbolic.load_memory(state.memory.data(), idx);
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& index = stack[0];
     auto& value = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(index);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, index.val, 32))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     intx::be::unsafe::store(&state.memory[static_cast<size_t>(index.val)], value.val);
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
     {
         if(value.is_pure()) 
             state.symbolic.memory.set_concrete(static_cast<size_t>(index.val), 32);
@@ -945,18 +945,18 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& index = stack[0];
     auto& value = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(index);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(index);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, index.val, 1))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, index.val, 1))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
     {
         if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)].set_concrete();
         else {
@@ -967,17 +967,17 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept;
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept;
 
 /// Internal jump implementation for JUMP/JUMPI instructions.
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator jump_impl(ExecutionState<isSymbolic>& state, const StackItem<isSymbolic>& dst) noexcept
 {
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(dst);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(dst);
 
     const auto hi_part_is_nonzero = (dst.val[3] | dst.val[2] | dst.val[1]) != 0;
     if (hi_part_is_nonzero || !state.analysis.baseline->check_jumpdest(dst.val[0])) [[unlikely]]
@@ -989,29 +989,29 @@ inline code_iterator jump_impl(ExecutionState<isSymbolic>& state, const StackIte
 }
 
 /// JUMP instruction implementation using baseline::CodeAnalysis.
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator jump(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator /*pos*/) noexcept
 {
-    return jump_impl(state, stack[0]);
+    return jump_impl<isSymbolic, isSymbolicEnabled>(state, stack[0]);
 }
 
 /// JUMPI instruction implementation using baseline::CodeAnalysis.
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator jumpi(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     const auto& dst = stack[0];
     const auto& cond = stack[1];
-    if constexpr (isSymbolic) {
+    if constexpr (isSymbolic && isSymbolicEnabled) {
         if (StackItem<true>::is_symbolic(cond.sval))
         {
             if(cond.val != 0) state.symbolic.requirements.push_back(SymbolicRequirement{Req::notEqual, cond.sval, 0});
             else state.symbolic.requirements.push_back(SymbolicRequirement{Req::equal,cond.sval, 0});
         }
     }
-    return cond.val ? jump_impl(state, dst) : pos + 1;
+    return cond.val ? jump_impl<isSymbolic, isSymbolicEnabled>(state, dst) : pos + 1;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator rjump(StackTop<isSymbolic> /*stack*/, ExecutionState<isSymbolic>& /*state*/, code_iterator pc) noexcept
 {
     // Reading next 2 bytes is guaranteed to be safe by deploy-time validation.
@@ -1019,15 +1019,15 @@ inline code_iterator rjump(StackTop<isSymbolic> /*stack*/, ExecutionState<isSymb
     return pc + 3 + offset;  // PC_post_rjump + offset
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator rjumpi(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pc) noexcept
 {
     // unsupported by monad atm
     const auto cond = stack[0];
-    return cond.val ? rjump(stack, state, pc) : pc + 3;
+    return cond.val ? rjump<isSymbolic, isSymbolicEnabled>(stack, state, pc) : pc + 3;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator rjumpv(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& /*state*/, code_iterator pc) noexcept
 {
     // unsupported by monad atm
@@ -1050,42 +1050,42 @@ inline code_iterator rjumpv(StackTop<isSymbolic> stack, ExecutionState<isSymboli
     }
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator pc(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     stack.push(static_cast<uint64_t>(pos - state.analysis.baseline->executable_code().data()));
     return pos + 1;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void msize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.memory.size());
-    if constexpr (isSymbolic) assert(state.memory.size() == state.symbolic.memory.size());
+    if constexpr (isSymbolic && isSymbolicEnabled) assert(state.memory.size() == state.symbolic.memory.size());
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result gas(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& /*state*/) noexcept
 {
     stack.push(gas_left);
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void tload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
     const auto key = intx::be::store<evmc::bytes32>(x.val);
     const auto value = state.host.get_transient_storage(state.msg->recipient, key);
     x.val = intx::be::load<uint256>(value);
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         state.symbolic.journaled.get_tstore(state.msg->recipient, key, x.sval);
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result tstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(stack[0]);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(stack[0]);
 
     if (state.in_static_mode())
         return {EVMC_STATIC_MODE_VIOLATION, 0};
@@ -1093,11 +1093,11 @@ inline Result tstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
     const auto key = intx::be::store<evmc::bytes32>(stack[0].val);
     const auto value = intx::be::store<evmc::bytes32>(stack[1].val);
     state.host.set_transient_storage(state.msg->recipient, key, value);
-    if constexpr (isSymbolic) state.symbolic.journaled.update_tstore(state.msg->recipient, key, stack[1]);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.journaled.update_tstore(state.msg->recipient, key, stack[1]);
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void push0(StackTop<isSymbolic> stack) noexcept
 {
     stack.push(uint256 {});
@@ -1142,7 +1142,7 @@ inline uint64_t load_partial_push_data<4>(code_iterator pos) noexcept
 /// @tparam Len The number of push data bytes, e.g. PUSH3 is push<3>.
 ///
 /// It assumes that at lest 32 bytes of data are available so code padding is required.
-template <bool isSymbolic, size_t Len>
+template <bool isSymbolic, bool isSymbolicEnabled, size_t Len>
 inline code_iterator push(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& /*state*/, code_iterator pos) noexcept
 {
     constexpr auto num_full_words = Len / sizeof(uint64_t);
@@ -1165,43 +1165,43 @@ inline code_iterator push(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>
         r.val[num_full_words - 1 - i] = intx::be::unsafe::load<uint64_t>(data);
         data += sizeof(uint64_t);
     }
-    if constexpr (isSymbolic) r.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) r.set_pure();
 
     return pos + (Len + 1);
 }
 
-template <bool isSymbolic> inline constexpr auto push1 = push<isSymbolic, 1>;
-template <bool isSymbolic> inline constexpr auto push2 = push<isSymbolic, 2>;
-template <bool isSymbolic> inline constexpr auto push3 = push<isSymbolic, 3>;
-template <bool isSymbolic> inline constexpr auto push4 = push<isSymbolic, 4>;
-template <bool isSymbolic> inline constexpr auto push5 = push<isSymbolic, 5>;
-template <bool isSymbolic> inline constexpr auto push6 = push<isSymbolic, 6>;
-template <bool isSymbolic> inline constexpr auto push7 = push<isSymbolic, 7>;
-template <bool isSymbolic> inline constexpr auto push8 = push<isSymbolic, 8>;
-template <bool isSymbolic> inline constexpr auto push9 = push<isSymbolic, 9>;
-template <bool isSymbolic> inline constexpr auto push10 = push<isSymbolic, 10>;
-template <bool isSymbolic> inline constexpr auto push11 = push<isSymbolic, 11>;
-template <bool isSymbolic> inline constexpr auto push12 = push<isSymbolic, 12>;
-template <bool isSymbolic> inline constexpr auto push13 = push<isSymbolic, 13>;
-template <bool isSymbolic> inline constexpr auto push14 = push<isSymbolic, 14>;
-template <bool isSymbolic> inline constexpr auto push15 = push<isSymbolic, 15>;
-template <bool isSymbolic> inline constexpr auto push16 = push<isSymbolic, 16>;
-template <bool isSymbolic> inline constexpr auto push17 = push<isSymbolic, 17>;
-template <bool isSymbolic> inline constexpr auto push18 = push<isSymbolic, 18>;
-template <bool isSymbolic> inline constexpr auto push19 = push<isSymbolic, 19>;
-template <bool isSymbolic> inline constexpr auto push20 = push<isSymbolic, 20>;
-template <bool isSymbolic> inline constexpr auto push21 = push<isSymbolic, 21>;
-template <bool isSymbolic> inline constexpr auto push22 = push<isSymbolic, 22>;
-template <bool isSymbolic> inline constexpr auto push23 = push<isSymbolic, 23>;
-template <bool isSymbolic> inline constexpr auto push24 = push<isSymbolic, 24>;
-template <bool isSymbolic> inline constexpr auto push25 = push<isSymbolic, 25>;
-template <bool isSymbolic> inline constexpr auto push26 = push<isSymbolic, 26>;
-template <bool isSymbolic> inline constexpr auto push27 = push<isSymbolic, 27>;
-template <bool isSymbolic> inline constexpr auto push28 = push<isSymbolic, 28>;
-template <bool isSymbolic> inline constexpr auto push29 = push<isSymbolic, 29>;
-template <bool isSymbolic> inline constexpr auto push30 = push<isSymbolic, 30>;
-template <bool isSymbolic> inline constexpr auto push31 = push<isSymbolic, 31>;
-template <bool isSymbolic> inline constexpr auto push32 = push<isSymbolic, 32>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push1 = push<isSymbolic, isSymbolicEnabled, 1>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push2 = push<isSymbolic, isSymbolicEnabled, 2>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push3 = push<isSymbolic, isSymbolicEnabled, 3>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push4 = push<isSymbolic, isSymbolicEnabled, 4>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push5 = push<isSymbolic, isSymbolicEnabled, 5>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push6 = push<isSymbolic, isSymbolicEnabled, 6>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push7 = push<isSymbolic, isSymbolicEnabled, 7>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push8 = push<isSymbolic, isSymbolicEnabled, 8>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push9 = push<isSymbolic, isSymbolicEnabled, 9>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push10 = push<isSymbolic, isSymbolicEnabled, 10>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push11 = push<isSymbolic, isSymbolicEnabled, 11>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push12 = push<isSymbolic, isSymbolicEnabled, 12>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push13 = push<isSymbolic, isSymbolicEnabled, 13>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push14 = push<isSymbolic, isSymbolicEnabled, 14>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push15 = push<isSymbolic, isSymbolicEnabled, 15>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push16 = push<isSymbolic, isSymbolicEnabled, 16>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push17 = push<isSymbolic, isSymbolicEnabled, 17>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push18 = push<isSymbolic, isSymbolicEnabled, 18>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push19 = push<isSymbolic, isSymbolicEnabled, 19>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push20 = push<isSymbolic, isSymbolicEnabled, 20>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push21 = push<isSymbolic, isSymbolicEnabled, 21>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push22 = push<isSymbolic, isSymbolicEnabled, 22>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push23 = push<isSymbolic, isSymbolicEnabled, 23>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push24 = push<isSymbolic, isSymbolicEnabled, 24>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push25 = push<isSymbolic, isSymbolicEnabled, 25>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push26 = push<isSymbolic, isSymbolicEnabled, 26>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push27 = push<isSymbolic, isSymbolicEnabled, 27>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push28 = push<isSymbolic, isSymbolicEnabled, 28>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push29 = push<isSymbolic, isSymbolicEnabled, 29>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push30 = push<isSymbolic, isSymbolicEnabled, 30>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push31 = push<isSymbolic, isSymbolicEnabled, 31>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto push32 = push<isSymbolic, isSymbolicEnabled, 32>;
 
 
 /// DUP instruction implementation.
@@ -1213,26 +1213,26 @@ inline void dup(StackTop<isSymbolic> stack) noexcept
     stack.push(stack[N - 1]);
 }
 
-template <bool isSymbolic> inline constexpr auto dup1 = dup<isSymbolic, 1>;
-template <bool isSymbolic> inline constexpr auto dup2 = dup<isSymbolic, 2>;
-template <bool isSymbolic> inline constexpr auto dup3 = dup<isSymbolic, 3>;
-template <bool isSymbolic> inline constexpr auto dup4 = dup<isSymbolic, 4>;
-template <bool isSymbolic> inline constexpr auto dup5 = dup<isSymbolic, 5>;
-template <bool isSymbolic> inline constexpr auto dup6 = dup<isSymbolic, 6>;
-template <bool isSymbolic> inline constexpr auto dup7 = dup<isSymbolic, 7>;
-template <bool isSymbolic> inline constexpr auto dup8 = dup<isSymbolic, 8>;
-template <bool isSymbolic> inline constexpr auto dup9 = dup<isSymbolic, 9>;
-template <bool isSymbolic> inline constexpr auto dup10 = dup<isSymbolic, 10>;
-template <bool isSymbolic> inline constexpr auto dup11 = dup<isSymbolic, 11>;
-template <bool isSymbolic> inline constexpr auto dup12 = dup<isSymbolic, 12>;
-template <bool isSymbolic> inline constexpr auto dup13 = dup<isSymbolic, 13>;
-template <bool isSymbolic> inline constexpr auto dup14 = dup<isSymbolic, 14>;
-template <bool isSymbolic> inline constexpr auto dup15 = dup<isSymbolic, 15>;
-template <bool isSymbolic> inline constexpr auto dup16 = dup<isSymbolic, 16>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup1 = dup<isSymbolic, 1>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup2 = dup<isSymbolic, 2>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup3 = dup<isSymbolic, 3>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup4 = dup<isSymbolic, 4>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup5 = dup<isSymbolic, 5>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup6 = dup<isSymbolic, 6>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup7 = dup<isSymbolic, 7>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup8 = dup<isSymbolic, 8>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup9 = dup<isSymbolic, 9>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup10 = dup<isSymbolic, 10>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup11 = dup<isSymbolic, 11>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup12 = dup<isSymbolic, 12>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup13 = dup<isSymbolic, 13>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup14 = dup<isSymbolic, 14>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup15 = dup<isSymbolic, 15>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto dup16 = dup<isSymbolic, 16>;
 
 /// SWAP instruction implementation.
 /// @tparam N  The number as in the instruction definition, e.g. SWAP3 is swap<3>.
-template <bool isSymbolic, int N>
+template <bool isSymbolic, bool isSymbolicEnabled, int N>
 inline void swap(StackTop<isSymbolic> stack) noexcept
 {
     static_assert(N >= 1 && N <= 16);
@@ -1252,35 +1252,35 @@ inline void swap(StackTop<isSymbolic> stack) noexcept
     a.val[1] = t1;
     a.val[2] = t2;
     a.val[3] = t3;
-    if constexpr (isSymbolic) t.sval.swap(a.sval);
+    if constexpr (isSymbolic && isSymbolicEnabled) t.sval.swap(a.sval);
 }
 
-template <bool isSymbolic> inline constexpr auto swap1 = swap<isSymbolic, 1>;
-template <bool isSymbolic> inline constexpr auto swap2 = swap<isSymbolic, 2>;
-template <bool isSymbolic> inline constexpr auto swap3 = swap<isSymbolic, 3>;
-template <bool isSymbolic> inline constexpr auto swap4 = swap<isSymbolic, 4>;
-template <bool isSymbolic> inline constexpr auto swap5 = swap<isSymbolic, 5>;
-template <bool isSymbolic> inline constexpr auto swap6 = swap<isSymbolic, 6>;
-template <bool isSymbolic> inline constexpr auto swap7 = swap<isSymbolic, 7>;
-template <bool isSymbolic> inline constexpr auto swap8 = swap<isSymbolic, 8>;
-template <bool isSymbolic> inline constexpr auto swap9 = swap<isSymbolic, 9>;
-template <bool isSymbolic> inline constexpr auto swap10 = swap<isSymbolic, 10>;
-template <bool isSymbolic> inline constexpr auto swap11 = swap<isSymbolic, 11>;
-template <bool isSymbolic> inline constexpr auto swap12 = swap<isSymbolic, 12>;
-template <bool isSymbolic> inline constexpr auto swap13 = swap<isSymbolic, 13>;
-template <bool isSymbolic> inline constexpr auto swap14 = swap<isSymbolic, 14>;
-template <bool isSymbolic> inline constexpr auto swap15 = swap<isSymbolic, 15>;
-template <bool isSymbolic> inline constexpr auto swap16 = swap<isSymbolic, 16>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap1 = swap<isSymbolic, isSymbolicEnabled, 1>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap2 = swap<isSymbolic, isSymbolicEnabled, 2>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap3 = swap<isSymbolic, isSymbolicEnabled, 3>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap4 = swap<isSymbolic, isSymbolicEnabled, 4>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap5 = swap<isSymbolic, isSymbolicEnabled, 5>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap6 = swap<isSymbolic, isSymbolicEnabled, 6>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap7 = swap<isSymbolic, isSymbolicEnabled, 7>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap8 = swap<isSymbolic, isSymbolicEnabled, 8>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap9 = swap<isSymbolic, isSymbolicEnabled, 9>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap10 = swap<isSymbolic, isSymbolicEnabled, 10>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap11 = swap<isSymbolic, isSymbolicEnabled, 11>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap12 = swap<isSymbolic, isSymbolicEnabled, 12>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap13 = swap<isSymbolic, isSymbolicEnabled, 13>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap14 = swap<isSymbolic, isSymbolicEnabled, 14>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap15 = swap<isSymbolic, isSymbolicEnabled, 15>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto swap16 = swap<isSymbolic, isSymbolicEnabled, 16>;
 
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator dupn(StackTop<isSymbolic> stack, code_iterator pos) noexcept
 {
     stack.push(stack[pos[1]]);
     return pos + 2;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator swapn(StackTop<isSymbolic> stack, code_iterator pos) noexcept
 {
     // TODO: This may not be optimal, see instr::core::swap().
@@ -1288,7 +1288,7 @@ inline code_iterator swapn(StackTop<isSymbolic> stack, code_iterator pos) noexce
     return pos + 2;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator exchange(StackTop<isSymbolic> stack, code_iterator pos) noexcept
 {
     const auto n = (pos[1] >> 4) + 1;
@@ -1298,14 +1298,14 @@ inline code_iterator exchange(StackTop<isSymbolic> stack, code_iterator pos) noe
     return pos + 2;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& dst_u256 = stack[0];
     const auto& src_u256 = stack[1];
     const auto& size_u256 = stack[2];
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, std::max(dst_u256.val, src_u256.val), size_u256.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, std::max(dst_u256.val, src_u256.val), size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto dst = static_cast<size_t>(dst_u256.val);
@@ -1318,7 +1318,7 @@ inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
     if (size > 0)
     {
         std::memmove(&state.memory[dst], &state.memory[src], size);
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
         {
             if(dst < src)
             {
@@ -1340,7 +1340,7 @@ inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void dataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     // unsupported by monad atm
@@ -1360,16 +1360,16 @@ inline void dataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& sta
 
         index.val = intx::be::unsafe::load<uint256>(d);
     }
-    if constexpr (isSymbolic) index.set_pure();
+    if constexpr (isSymbolic && isSymbolicEnabled) index.set_pure();
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline void datasize(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state) noexcept
 {
     stack.push(state.analysis.baseline->eof_data().size());
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator dataloadn(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     const auto index = read_uint16_be(&pos[1]);
@@ -1378,16 +1378,16 @@ inline code_iterator dataloadn(StackTop<isSymbolic> stack, ExecutionState<isSymb
     return pos + 3;
 }
 
-template <bool isSymbolic> 
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline Result datacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto data = state.analysis.baseline->eof_data();
     const auto& mem_index = stack[0];
     const auto& data_index = stack[1];
     const auto& size = stack[2];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(mem_index, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(mem_index, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, mem_index.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto dst = static_cast<size_t>(mem_index.val);
@@ -1408,7 +1408,7 @@ inline Result datacopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSt
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic, size_t NumTopics>
+template <bool isSymbolic, bool isSymbolicEnabled, size_t NumTopics>
 inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(NumTopics <= 4);
@@ -1418,9 +1418,9 @@ inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
 
     const auto& offset = stack[0];
     const auto& size = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(offset, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(offset, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto o = static_cast<size_t>(offset.val);
@@ -1434,7 +1434,7 @@ inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
     int topic_counter = 2;
     for (auto& topic : topics){
         topic = intx::be::store<evmc::bytes32>(stack[topic_counter].val);
-        if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(stack[topic_counter]);
+        if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(stack[topic_counter]);
         topic_counter++;
     }
         
@@ -1444,36 +1444,36 @@ inline Result log(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<i
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic> inline constexpr auto log0 = log<isSymbolic, 0>;
-template <bool isSymbolic> inline constexpr auto log1 = log<isSymbolic, 1>;
-template <bool isSymbolic> inline constexpr auto log2 = log<isSymbolic, 2>;
-template <bool isSymbolic> inline constexpr auto log3 = log<isSymbolic, 3>;
-template <bool isSymbolic> inline constexpr auto log4 = log<isSymbolic, 4>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto log0 = log<isSymbolic, isSymbolicEnabled, 0>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto log1 = log<isSymbolic, isSymbolicEnabled, 1>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto log2 = log<isSymbolic, isSymbolicEnabled, 2>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto log3 = log<isSymbolic, isSymbolicEnabled, 3>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto log4 = log<isSymbolic, isSymbolicEnabled, 4>;
 
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept;
-template <bool isSymbolic> inline constexpr auto call = call_impl<isSymbolic, OP_CALL>;
-template <bool isSymbolic> inline constexpr auto callcode = call_impl<isSymbolic, OP_CALLCODE>;
-template <bool isSymbolic> inline constexpr auto delegatecall = call_impl<isSymbolic, OP_DELEGATECALL>;
-template <bool isSymbolic> inline constexpr auto staticcall = call_impl<isSymbolic, OP_STATICCALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto call = call_impl<isSymbolic, isSymbolicEnabled, OP_CALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto callcode = call_impl<isSymbolic, isSymbolicEnabled, OP_CALLCODE>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto delegatecall = call_impl<isSymbolic, isSymbolicEnabled, OP_DELEGATECALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto staticcall = call_impl<isSymbolic, isSymbolicEnabled, OP_STATICCALL>;
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept;
-template <bool isSymbolic> inline constexpr auto extcall = extcall_impl<isSymbolic, OP_EXTCALL>;
-template <bool isSymbolic> inline constexpr auto extdelegatecall = extcall_impl<isSymbolic, OP_EXTDELEGATECALL>;
-template <bool isSymbolic> inline constexpr auto extstaticcall = extcall_impl<isSymbolic, OP_EXTSTATICCALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto extcall = extcall_impl<isSymbolic, isSymbolicEnabled, OP_EXTCALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto extdelegatecall = extcall_impl<isSymbolic, isSymbolicEnabled, OP_EXTDELEGATECALL>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto extstaticcall = extcall_impl<isSymbolic, isSymbolicEnabled, OP_EXTSTATICCALL>;
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept;
-template <bool isSymbolic> inline constexpr auto create = create_impl<isSymbolic, OP_CREATE>;
-template <bool isSymbolic> inline constexpr auto create2 = create_impl<isSymbolic, OP_CREATE2>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto create = create_impl<isSymbolic, isSymbolicEnabled, OP_CREATE>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto create2 = create_impl<isSymbolic, isSymbolicEnabled, OP_CREATE2>;
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result eofcreate(
     StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state, code_iterator& pos) noexcept;
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator callf(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     // unsupported by monad atm
@@ -1500,7 +1500,7 @@ inline code_iterator callf(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
     return state.analysis.baseline->executable_code().data() + offset;
 }
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator retf(StackTop<isSymbolic> /*stack*/, ExecutionState<isSymbolic>& state, code_iterator /*pos*/) noexcept
 {
     const auto p = state.call_stack.back();
@@ -1508,7 +1508,7 @@ inline code_iterator retf(StackTop<isSymbolic> /*stack*/, ExecutionState<isSymbo
     return p;
 }
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline code_iterator jumpf(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     // unsupported by monad atm
@@ -1527,14 +1527,14 @@ inline code_iterator jumpf(StackTop<isSymbolic> stack, ExecutionState<isSymbolic
     return state.analysis.baseline->executable_code().data() + offset;
 }
 
-template <bool isSymbolic, evmc_status_code StatusCode>
+template <bool isSymbolic, bool isSymbolicEnabled, evmc_status_code StatusCode>
 inline TermResult return_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     const auto& offset = stack[0];
     const auto& size = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(offset, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(offset, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     state.output_size = static_cast<size_t>(size.val);
@@ -1542,20 +1542,20 @@ inline TermResult return_impl(StackTop<isSymbolic> stack, int64_t gas_left, Exec
         state.output_offset = static_cast<size_t>(offset.val);
     return {StatusCode, gas_left};
 }
-template <bool isSymbolic> inline constexpr auto return_ = return_impl<isSymbolic, EVMC_SUCCESS>;
-template <bool isSymbolic> inline constexpr auto revert = return_impl<isSymbolic, EVMC_REVERT>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto return_ = return_impl<isSymbolic, isSymbolicEnabled, EVMC_SUCCESS>;
+template <bool isSymbolic, bool isSymbolicEnabled> inline constexpr auto revert = return_impl<isSymbolic, isSymbolicEnabled, EVMC_REVERT>;
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline TermResult returncontract(
     StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state, code_iterator pos) noexcept
 {
     // unsupported by monad atm
-    if constexpr (isSymbolic) assert(false);
+    if constexpr (isSymbolic && isSymbolicEnabled) assert(false);
     const auto& offset = stack[0];
     const auto& size = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(offset, size);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(offset, size);
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, offset.val, size.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto deploy_container_index = size_t{pos[1]};
@@ -1572,7 +1572,7 @@ inline TermResult returncontract(
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 inline TermResult selfdestruct(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     if (state.in_static_mode())
@@ -1580,7 +1580,7 @@ inline TermResult selfdestruct(StackTop<isSymbolic> stack, int64_t gas_left, Exe
 
     const auto& beneficiary_index = stack[0];
     const auto beneficiary = intx::be::trunc<evmc::address>(beneficiary_index.val);
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(beneficiary_index);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(beneficiary_index);
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(beneficiary) == EVMC_ACCESS_COLD)
     {
@@ -1617,15 +1617,17 @@ inline TermResult selfdestruct(StackTop<isSymbolic> stack, int64_t gas_left, Exe
 /// implementing the instruction identified by the opcode.
 ///     instr::impl<OP_DUP1>(/*...*/);
 /// The unspecialized template is invalid and should never to used.
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 inline constexpr auto impl = nullptr;
 
 #undef ON_OPCODE_IDENTIFIER
 #define ON_OPCODE_IDENTIFIER(OPCODE, IDENTIFIER)                 \
     template <>                                                  \
-    inline constexpr auto impl<true, OPCODE> = IDENTIFIER<true>; \
+    inline constexpr auto impl<true, true, OPCODE> = IDENTIFIER<true, true>; \
     template <>                                                  \
-    inline constexpr auto impl<false, OPCODE> = IDENTIFIER<false>; // opcode -> implementation
+    inline constexpr auto impl<true, false, OPCODE> = IDENTIFIER<true, false>; \
+    template <>                                                  \
+    inline constexpr auto impl<false, false, OPCODE> = IDENTIFIER<false, false>; // opcode -> implementation
 MAP_OPCODES
 #undef ON_OPCODE_IDENTIFIER
 #define ON_OPCODE_IDENTIFIER ON_OPCODE_IDENTIFIER_DEFAULT

@@ -42,7 +42,7 @@ consteval evmc_call_kind to_call_kind(Opcode op) noexcept
     }
 }
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(
@@ -63,7 +63,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     const auto input_offset = static_cast<size_t>(input_offset_u256.val);
     const auto input_size = static_cast<size_t>(input_size_u256.val);
 
-    if constexpr (isSymbolic) {
+    if constexpr (isSymbolic && isSymbolicEnabled) {
         state.symbolic.symbolic_value_matches_concrete(gas, dstStackItem, input_offset_u256, input_size_u256, output_offset_u256, output_size_u256);
         if (mvalue.has_value()) state.symbolic.symbolic_value_matches_concrete(mvalue.value());
 
@@ -121,7 +121,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
 
     stack.push(0);  // Assume failure.
     state.return_data.clear();
-    if constexpr (isSymbolic) state.symbolic.returndata.clear();
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.returndata.clear();
 
     if (state.rev >= EVMC_BERLIN && state.host.access_account(dst) == EVMC_ACCESS_COLD)
     {
@@ -129,10 +129,10 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256.val, input_size_u256.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, input_offset_u256.val, input_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, output_offset_u256.val, output_size_u256.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, output_offset_u256.val, output_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto output_offset = static_cast<size_t>(output_offset_u256.val);
@@ -146,7 +146,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     msg.sender = (Op == OP_DELEGATECALL) ? state.msg->sender : state.msg->recipient;
     msg.value =
         (Op == OP_DELEGATECALL) ? state.msg->value : (has_non_zero_value ? intx::be::store<evmc::uint256be>(mvalue.value().val) : evmc_bytes32 {});
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         // if this check fails, we have reached the maximum stack depth of 1024, so this call will probably fail
         if (state.child != nullptr)
             state.child->symbolic.callvalue = 
@@ -158,7 +158,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
         msg.input_data = &state.memory[input_offset];
         msg.input_size = input_size;
     }
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic && isSymbolicEnabled) 
         if (state.child != nullptr)
             state.child->symbolic.calldata.set(input_size, &state.symbolic.memory[input_offset], &state.memory[input_offset]);
 
@@ -200,7 +200,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     const auto result = state.host.call(msg);
     state.return_data.assign(result.output_data, result.output_size);
 
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
     {
         if(calling_precompile)
         {
@@ -222,7 +222,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     if (const auto copy_size = std::min(output_size, result.output_size); copy_size > 0)
     {
         std::memcpy(&state.memory[output_offset], result.output_data, copy_size);
-        if constexpr (isSymbolic)
+        if constexpr (isSymbolic && isSymbolicEnabled)
         {
             if(calling_precompile)
                 state.symbolic.memory.set_concrete(output_offset, copy_size);
@@ -237,27 +237,37 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result call_impl<true, OP_CALL>(
+template Result call_impl<true, true, OP_CALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result call_impl<true, OP_STATICCALL>(
+template Result call_impl<true, true, OP_STATICCALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result call_impl<true, OP_DELEGATECALL>(
+template Result call_impl<true, true, OP_DELEGATECALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result call_impl<true, OP_CALLCODE>(
+template Result call_impl<true, true, OP_CALLCODE>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
 
-template Result call_impl<false, OP_CALL>(
+template Result call_impl<true, false, OP_CALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, false, OP_STATICCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, false, OP_DELEGATECALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result call_impl<true, false, OP_CALLCODE>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+
+
+template Result call_impl<false, false, OP_CALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result call_impl<false, OP_STATICCALL>(
+template Result call_impl<false, false, OP_STATICCALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result call_impl<false, OP_DELEGATECALL>(
+template Result call_impl<false, false, OP_DELEGATECALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result call_impl<false, OP_CALLCODE>(
+template Result call_impl<false, false, OP_CALLCODE>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 
 
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(Op == OP_EXTCALL || Op == OP_EXTDELEGATECALL || Op == OP_EXTSTATICCALL);
@@ -284,7 +294,7 @@ Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
             return {EVMC_OUT_OF_GAS, gas_left};
     }
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto input_offset = static_cast<size_t>(input_offset_u256);
@@ -360,21 +370,28 @@ Result extcall_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result extcall_impl<true, OP_EXTCALL>(
+template Result extcall_impl<true, true, OP_EXTCALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result extcall_impl<true, OP_EXTSTATICCALL>(
+template Result extcall_impl<true, true, OP_EXTSTATICCALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result extcall_impl<true, OP_EXTDELEGATECALL>(
+template Result extcall_impl<true, true, OP_EXTDELEGATECALL>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
 
-template Result extcall_impl<false, OP_EXTCALL>(
+template Result extcall_impl<true, false, OP_EXTCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result extcall_impl<true, false, OP_EXTSTATICCALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result extcall_impl<true, false, OP_EXTDELEGATECALL>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+
+template Result extcall_impl<false, false, OP_EXTCALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result extcall_impl<false, OP_EXTSTATICCALL>(
+template Result extcall_impl<false, false, OP_EXTSTATICCALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result extcall_impl<false, OP_EXTDELEGATECALL>(
+template Result extcall_impl<false, false, OP_EXTDELEGATECALL>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 
-template <bool isSymbolic, Opcode Op>
+template <bool isSymbolic, bool isSymbolicEnabled, Opcode Op>
 Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     static_assert(Op == OP_CREATE || Op == OP_CREATE2);
@@ -387,7 +404,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     const auto init_code_size_u256 = stack.popStackItem();
     const auto msalt = (Op == OP_CREATE2) ? std::optional<StackItem<isSymbolic>>(stack.popStackItem()) : std::nullopt;
     const auto has_salt = msalt.has_value();
-    if constexpr (isSymbolic) {
+    if constexpr (isSymbolic && isSymbolicEnabled) {
         state.symbolic.symbolic_value_matches_concrete(endowment, init_code_offset_u256, init_code_size_u256);
         if (has_salt) state.symbolic.symbolic_value_matches_concrete(msalt.value());
     }
@@ -395,7 +412,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     stack.push(0);  // Assume failure.
     state.return_data.clear();
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, init_code_offset_u256.val, init_code_size_u256.val))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, init_code_offset_u256.val, init_code_size_u256.val))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto init_code_offset = static_cast<size_t>(init_code_offset_u256.val);
@@ -433,7 +450,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
                 return {EVMC_SUCCESS, gas_left};  // "Light" failure.
         }
     }
-    if constexpr (isSymbolic) 
+    if constexpr (isSymbolic && isSymbolicEnabled) 
         if (state.child != nullptr)
             // internally, the host strips the input_size and input_data from this message
             // and passes them via the code and code_size in
@@ -452,7 +469,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     state.return_data.assign(result.output_data, result.output_size);
 
 
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
     {
         if (state.child && state.child->output_size != 0)
             state.symbolic.returndata.set(state.child->output_size, &state.child->symbolic.memory[state.child->output_offset]);
@@ -464,13 +481,13 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if (result.status_code == EVMC_SUCCESS)
     {
         stack[0].val = intx::be::load<uint256>(result.create_address);
-        if constexpr (isSymbolic) stack[0].set_pure();
+        if constexpr (isSymbolic && isSymbolicEnabled) stack[0].set_pure();
     }
 
     return {EVMC_SUCCESS, gas_left};
 }
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result eofcreate(
     StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state, code_iterator& pos) noexcept
 {
@@ -485,7 +502,7 @@ Result eofcreate(
     stack.push(0);  // Assume failure.
     state.return_data.clear();
 
-    if (!check_memory<isSymbolic>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
+    if (!check_memory<isSymbolic, isSymbolicEnabled>(gas_left, state.memory, state.symbolic.memory, input_offset_u256, input_size_u256))
         return {EVMC_OUT_OF_GAS, gas_left};
 
     const auto initcontainer_index = pos[1];
@@ -538,18 +555,25 @@ Result eofcreate(
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result eofcreate(
+template Result eofcreate<true, true>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state, code_iterator& pos) noexcept;
-template Result eofcreate(
+template Result eofcreate<true, false>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state, code_iterator& pos) noexcept;
+template Result eofcreate<false, false>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state, code_iterator& pos) noexcept;
 
-template Result create_impl<true, OP_CREATE>(
+template Result create_impl<true, true, OP_CREATE>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result create_impl<true, OP_CREATE2>(
+template Result create_impl<true, true, OP_CREATE2>(
     StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
 
-template Result create_impl<false, OP_CREATE>(
+template Result create_impl<true, false, OP_CREATE>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result create_impl<true, false, OP_CREATE2>(
+    StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+
+template Result create_impl<false, false, OP_CREATE>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
-template Result create_impl<false, OP_CREATE2>(
+template Result create_impl<false, false, OP_CREATE2>(
     StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 }  // namespace evmone::instr::core

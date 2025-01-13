@@ -84,7 +84,7 @@ evmc_result execute(evmc_vm* vm, const evmc_host_interface* host, evmc_host_cont
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
 
 /// Executes in Baseline interpreter with the pre-processed code.
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 EVMC_EXPORT evmc_result execute(VM<isSymbolic>&, const evmc_host_interface& host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message& msg, const CodeAnalysis& analysis) noexcept;
 

@@ -14,21 +14,21 @@ using namespace evmone::instr;
 
 /// Instruction implementations - "core" instruction + stack height adjustment.
 /// @{
-template <Opcode Op, void CoreFn(StackTop<false>) noexcept = core::impl<false, Op>>
+template <Opcode Op, void CoreFn(StackTop<false>) noexcept = core::impl<false, false, Op>>
 inline void impl(AdvancedExecutionState& state) noexcept
 {
     CoreFn(state.stack);
     state.adjust_stack_size(instr::traits[Op].stack_height_change);
 }
 
-template <Opcode Op, void CoreFn(StackTop<false>, ExecutionState<false>&) noexcept = core::impl<false, Op>>
+template <Opcode Op, void CoreFn(StackTop<false>, ExecutionState<false>&) noexcept = core::impl<false, false, Op>>
 inline void impl(AdvancedExecutionState& state) noexcept
 {
     CoreFn(state.stack, state);
     state.adjust_stack_size(instr::traits[Op].stack_height_change);
 }
 
-template <Opcode Op, evmc_status_code CoreFn(StackTop<false>, ExecutionState<false>&) noexcept = core::impl<false, Op>>
+template <Opcode Op, evmc_status_code CoreFn(StackTop<false>, ExecutionState<false>&) noexcept = core::impl<false, false, Op>>
 inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
 {
     const auto status = CoreFn(state.stack, state);
@@ -37,7 +37,7 @@ inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
 }
 
 template <Opcode Op,
-    evmc_status_code CoreFn(StackTop<false>, int64_t&, ExecutionState<false>&) noexcept = core::impl<false, Op>>
+    evmc_status_code CoreFn(StackTop<false>, int64_t&, ExecutionState<false>&) noexcept = core::impl<false, false, Op>>
 inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
 {
     const auto status = CoreFn(state.stack, state.gas_left, state);
@@ -45,7 +45,7 @@ inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
     return status;
 }
 
-template <Opcode Op, Result CoreFn(StackTop<false>, int64_t, ExecutionState<false>&) noexcept = core::impl<false, Op>>
+template <Opcode Op, Result CoreFn(StackTop<false>, int64_t, ExecutionState<false>&) noexcept = core::impl<false, false, Op>>
 inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
 {
     const auto status = CoreFn(state.stack, state.gas_left, state);
@@ -55,7 +55,7 @@ inline evmc_status_code impl(AdvancedExecutionState& state) noexcept
 }
 
 template <Opcode Op,
-    TermResult CoreFn(StackTop<false>, int64_t, ExecutionState<false>&) noexcept = core::impl<false, Op>>
+    TermResult CoreFn(StackTop<false>, int64_t, ExecutionState<false>&) noexcept = core::impl<false, false, Op>>
 inline TermResult impl(AdvancedExecutionState& state) noexcept
 {
     // Stack height adjustment may be omitted.
@@ -63,7 +63,7 @@ inline TermResult impl(AdvancedExecutionState& state) noexcept
 }
 
 template <Opcode Op,
-    Result CoreFn(StackTop<false>, int64_t, ExecutionState<false>&, code_iterator&) noexcept = core::impl<false, Op>>
+    Result CoreFn(StackTop<false>, int64_t, ExecutionState<false>&, code_iterator&) noexcept = core::impl<false, false, Op>>
 inline Result impl(AdvancedExecutionState& state, code_iterator pos) noexcept
 {
     // Stack height adjustment may be omitted.
@@ -71,7 +71,7 @@ inline Result impl(AdvancedExecutionState& state, code_iterator pos) noexcept
 }
 
 template <Opcode Op,
-    TermResult CoreFn(StackTop<false>, int64_t, ExecutionState<false>&, code_iterator) noexcept = core::impl<false, Op>>
+    TermResult CoreFn(StackTop<false>, int64_t, ExecutionState<false>&, code_iterator) noexcept = core::impl<false, false, Op>>
 inline TermResult impl(AdvancedExecutionState& state, code_iterator pos) noexcept
 {
     // Stack height adjustment may be omitted.
@@ -79,7 +79,7 @@ inline TermResult impl(AdvancedExecutionState& state, code_iterator pos) noexcep
 }
 
 template <Opcode Op,
-    code_iterator CoreFn(StackTop<false>, ExecutionState<false>&, code_iterator) noexcept = core::impl<false, Op>>
+    code_iterator CoreFn(StackTop<false>, ExecutionState<false>&, code_iterator) noexcept = core::impl<false, false, Op>>
 inline code_iterator impl(AdvancedExecutionState& state, code_iterator pos) noexcept
 {
     const auto new_pos = CoreFn(state.stack, state, pos);
@@ -87,7 +87,7 @@ inline code_iterator impl(AdvancedExecutionState& state, code_iterator pos) noex
     return new_pos;
 }
 
-template <Opcode Op, code_iterator CoreFn(StackTop<false>, code_iterator) noexcept = core::impl<false, Op>>
+template <Opcode Op, code_iterator CoreFn(StackTop<false>, code_iterator) noexcept = core::impl<false, false, Op>>
 inline code_iterator impl(AdvancedExecutionState& state, code_iterator pos) noexcept
 {
     const auto new_pos = CoreFn(state.stack, pos);

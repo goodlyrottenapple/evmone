@@ -4,6 +4,7 @@
 #include <cstring>
 #include <vector>
 #include <iostream>
+#include <limits>
 
 namespace evmone
 {
@@ -19,6 +20,8 @@ class ArenaAllocator
     static ssize_t constexpr max_alloc_size = 1024;
     static ssize_t constexpr block_size = 4 * 1024;
     static ssize_t constexpr cache_size = max_alloc_size / alignment;
+    // static ssize_t constexpr blocks_limit = std::numeric_limits<ssize_t>::max();
+    static ssize_t constexpr blocks_limit = 100;
 
     static_assert(max_alloc_size % alignment == 0);
     static_assert(block_size % max_alloc_size == 0);
@@ -30,6 +33,10 @@ class ArenaAllocator
     CacheElement* cache[cache_size];
 
 public:
+    int64_t (*dispatch_cgoto_ptr)(const std::array<int16_t, 256>&, ExecutionState<true>&, int64_t, const uint8_t*);
+    int64_t (*dispatch_cgoto_ptr_enabled)(const std::array<int16_t, 256>&, ExecutionState<true>&, int64_t, const uint8_t*);
+    int64_t (*dispatch_cgoto_ptr_disabled)(const std::array<int16_t, 256>&, ExecutionState<true>&, int64_t, const uint8_t*);
+
     ArenaAllocator()
         : block{new char[block_size]}, blocks{block}, block_usage{}, block_no{}, cache{}
     {}
@@ -70,6 +77,12 @@ public:
         {
             cache[i] = nullptr;
         }
+        dispatch_cgoto_ptr = dispatch_cgoto_ptr_enabled;
+    }
+
+    bool symbolic_analysys_threshold_exceeded()
+    {
+        return block_no > blocks_limit;
     }
 
     template<typename T>
@@ -82,12 +95,16 @@ public:
         static ssize_t constexpr n = N + (N % alignment);
         static ssize_t constexpr i = (n / alignment) - 1;
         static_assert(i < cache_size);
+        // std::cerr << "alloc...\n";
 
         CacheElement* e;
         if (cache[i] == nullptr) {
             block_usage += n;
             if (block_usage > block_size) {
                 block_no++;
+                if(symbolic_analysys_threshold_exceeded()) {
+                    dispatch_cgoto_ptr = dispatch_cgoto_ptr_disabled;
+                }
                 if (block_no < blocks.size()) block = blocks[block_no];
                 else 
                 {
