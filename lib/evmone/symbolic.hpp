@@ -171,12 +171,12 @@ struct StackItem<true> {
             set_pure();
         else
         {
-            if (sval.counter() == 1 && sval != second.sval) 
+            if (sval.counter() == 1 && is_pure(second.sval)) 
                 *sval = 
                     BinaryOp {
                         op, 
                         is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
-                        is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval
+                        make_symbolic(arena, second.val)
                     };
             else sval = make_symbolic(arena, BinaryOp {
                         op, 
@@ -192,13 +192,13 @@ struct StackItem<true> {
             set_pure();
         else
         {
-            if (sval.counter() == 1 && sval != third.sval) 
+            if (sval.counter() == 1 && is_pure(third.sval)) 
                 *sval = 
                     TernaryOp {
                         op, 
                         is_pure(first.sval) ? make_symbolic(arena, first.val) : first.sval,
                         is_pure(second.sval) ? make_symbolic(arena, second.val) : second.sval,
-                        is_pure(third.sval) ? make_symbolic(arena, third.val) : third.sval
+                        make_symbolic(arena, third.val)
                     };
             else sval = make_symbolic(arena, TernaryOp {
                         op, 
