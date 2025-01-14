@@ -249,13 +249,10 @@ int64_t dispatch(const CostTable& cost_table, ExecutionState<isSymbolic>& state,
     intx::unreachable();
 }
 
-int64_t (*dispatch_ptr)(const CostTable&, ExecutionState<true>&, int64_t, const uint8_t*, Tracer<true>*);
-// dispatch_ptr = dispatch<true,true,true>;
-
 #if EVMONE_CGOTO_SUPPORTED
 template <bool isSymbolic, bool isSymbolicEnabled>
-int64_t dispatch_cgoto(
-    const CostTable& cost_table, ExecutionState<isSymbolic>& state, int64_t gas, const uint8_t* code) noexcept
+inline int64_t dispatch_cgoto_loop(
+    const CostTable& cost_table, ExecutionState<isSymbolic>& state, int64_t gas, const StackItem<isSymbolic>* stack_bottom, Position<isSymbolic>& position) noexcept
 {
 #pragma GCC diagnostic ignored "-Wpedantic"
 
@@ -269,12 +266,6 @@ int64_t dispatch_cgoto(
 #define ON_OPCODE_UNDEFINED ON_OPCODE_UNDEFINED_DEFAULT
     };
     static_assert(std::size(cgoto_table) == 256);
-
-    const auto stack_bottom = state.stack_space.bottom();
-
-    // Code iterator and stack top pointer for interpreter loop.
-    Position<isSymbolic> position{code, stack_bottom};
-
     goto* cgoto_table[*position.code_it];
 
 #define ON_OPCODE(OPCODE)                                                                 \
@@ -290,7 +281,13 @@ int64_t dispatch_cgoto(
            this improves compiler optimization. */                                        \
         position = next;                                                                  \
     }                                                                                     \
-    goto* cgoto_table[*position.code_it];
+    if constexpr (isSymbolic && isSymbolicEnabled)                                        \
+    {                                                                                     \
+        if(state.arena->symbolic_analysys_threshold_exceeded())                           \
+            return dispatch_cgoto_loop<true,false>(cost_table, state, gas, stack_bottom, position); \
+        else goto* cgoto_table[*position.code_it];                                        \
+    }                                                                                     \
+    else goto* cgoto_table[*position.code_it];
 
     MAP_OPCODES
 #undef ON_OPCODE
@@ -302,6 +299,19 @@ TARGET_OP_UNDEFINED:
 #endif
 }  // namespace
 
+
+template <bool isSymbolic, bool isSymbolicEnabled>
+int64_t dispatch_cgoto(
+    const CostTable& cost_table, ExecutionState<isSymbolic>& state, int64_t gas, const uint8_t* code) noexcept
+{
+#pragma GCC diagnostic ignored "-Wpedantic"
+
+    const auto stack_bottom = state.stack_space.bottom();
+
+    // Code iterator and stack top pointer for interpreter loop.
+    Position<isSymbolic> position{code, stack_bottom};
+    return dispatch_cgoto_loop<isSymbolic, isSymbolicEnabled>(cost_table, state, gas, stack_bottom, position);
+}
 
 template <bool isSymbolic, bool isSymbolicEnabled>
 evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_host_context* ctx,
@@ -343,31 +353,14 @@ evmc_result execute(VM<isSymbolic>& vm, const evmc_host_interface& host, evmc_ho
     if (INTX_UNLIKELY(tracer != nullptr))
     {
         tracer->notify_execution_start(state.rev, *state.msg, code);
-        if constexpr (!isSymbolic) gas = dispatch<false, false, true>(cost_table, state, gas, code.data(), tracer);
-        else
-        {
-            if constexpr (!isSymbolicEnabled) gas = dispatch<true, false, true>(cost_table, state, gas, code.data(), tracer);
-            else
-            {
-                gas = dispatch_ptr(cost_table, state, gas, code.data(), tracer);
-            }
-        }
+        gas = dispatch<isSymbolic, isSymbolicEnabled, true>(cost_table, state, gas, code.data(), tracer);
     }
     else
     {
 #if EVMONE_CGOTO_SUPPORTED
         if (vm.cgoto)
         {
-            // gas = dispatch_cgoto<isSymbolic, isSymbolicEnabled>(cost_table, state, gas, code.data());
-            if constexpr (!isSymbolic) gas = dispatch_cgoto<false, false>(cost_table, state, gas, code.data());
-            else
-            {
-                if constexpr (!isSymbolicEnabled) gas = dispatch_cgoto<true, false>(cost_table, state, gas, code.data());
-                else
-                {
-                    gas = vm.get_arena()->dispatch_cgoto_ptr(cost_table, state, gas, code.data());
-                }
-            }
+            gas = dispatch_cgoto<isSymbolic, isSymbolicEnabled>(cost_table, state, gas, code.data());
         }
         else
 #endif
@@ -419,9 +412,6 @@ evmc_result execute(evmc_vm* c_vm, const evmc_host_interface* host, evmc_host_co
     const auto code_analysis = analyze(container, eof_enabled);
     if constexpr (isSymbolic)
     {
-        vm->get_arena()->dispatch_cgoto_ptr_enabled = dispatch_cgoto<true,true>;
-        vm->get_arena()->dispatch_cgoto_ptr_disabled = dispatch_cgoto<true,true>;
-        vm->get_arena()->dispatch_cgoto_ptr = dispatch_cgoto<true,true>;
         if(vm->get_arena()->symbolic_analysys_threshold_exceeded()) return execute<true,false>(*vm, *host, ctx, rev, *msg, code_analysis);
         else return execute<true,true>(*vm, *host, ctx, rev, *msg, code_analysis);
     }
