@@ -171,7 +171,7 @@ struct StackItem<true> {
             set_pure();
         else
         {
-            if (sval.counter() == 1) 
+            if (sval.counter() == 1 && sval != second.sval) 
                 *sval = 
                     BinaryOp {
                         op, 
@@ -192,7 +192,7 @@ struct StackItem<true> {
             set_pure();
         else
         {
-            if (sval.counter() == 1) 
+            if (sval.counter() == 1 && sval != third.sval) 
                 *sval = 
                     TernaryOp {
                         op, 
