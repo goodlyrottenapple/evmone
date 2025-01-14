@@ -20,8 +20,7 @@ class ArenaAllocator
     static ssize_t constexpr max_alloc_size = 1024;
     static ssize_t constexpr block_size = 4 * 1024;
     static ssize_t constexpr cache_size = max_alloc_size / alignment;
-    // static ssize_t constexpr blocks_limit = std::numeric_limits<ssize_t>::max();
-    static ssize_t constexpr blocks_limit = 0;
+    static ssize_t constexpr blocks_limit = std::numeric_limits<ssize_t>::max();
 
     static_assert(max_alloc_size % alignment == 0);
     static_assert(block_size % max_alloc_size == 0);
@@ -90,7 +89,6 @@ public:
         static ssize_t constexpr n = N + (N % alignment);
         static ssize_t constexpr i = (n / alignment) - 1;
         static_assert(i < cache_size);
-        // std::cerr << "alloc...\n";
 
         CacheElement* e;
         if (cache[i] == nullptr) {

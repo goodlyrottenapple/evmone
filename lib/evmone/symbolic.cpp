@@ -90,7 +90,7 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
     while(!stack.empty() && reqs_valid)
     {
         std::visit(Cases{
-            [&](SymbolicStackItemPtr& ptr) { 
+            [&](SymbolicStackItemPtr& ptr) {
                 assert(ptr); //rc_ptr doesn't hold a nullptr
                 std::visit(Cases{
                     [&](uint256&) { stack.pop_back(); },
