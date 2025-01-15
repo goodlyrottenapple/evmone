@@ -33,7 +33,7 @@ class ArenaAllocator
 
 public:
     ArenaAllocator()
-        : block{new char[block_size]}, blocks{block}, block_usage{}, block_no{}, cache{}
+        : block{(char *)std::aligned_alloc(8, block_size)}, blocks{block}, block_usage{}, block_no{}, cache{}
     {}
 
     ArenaAllocator(ArenaAllocator &&other)
@@ -60,7 +60,7 @@ public:
     ~ArenaAllocator()
     {
         for (char* p : blocks)
-            delete[] p;
+            std::free(p);
     }
 
     void reset() 
@@ -98,7 +98,7 @@ public:
                 if (block_no < blocks.size()) block = blocks[block_no];
                 else 
                 {
-                    block = new char[block_size];
+                    block = (char *)std::aligned_alloc(8, block_size);
                     blocks.push_back(block);
                 }
                 block_usage = n;
