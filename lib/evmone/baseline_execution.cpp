@@ -283,11 +283,10 @@ inline int64_t dispatch_cgoto_loop(
     }                                                                                     \
     if constexpr (isSymbolic && isSymbolicEnabled)                                        \
     {                                                                                     \
-        if(state.arena->symbolic_analysys_threshold_exceeded())                           \
+        if(state.arena->symbolic_analysys_threshold_exceeded()) [[unlikely]]              \
             return dispatch_cgoto_loop<true,false>(cost_table, state, gas, stack_bottom, position); \
-        else goto* cgoto_table[*position.code_it];                                        \
     }                                                                                     \
-    else goto* cgoto_table[*position.code_it];
+    goto* cgoto_table[*position.code_it];
 
     MAP_OPCODES
 #undef ON_OPCODE
