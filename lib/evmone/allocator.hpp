@@ -4,6 +4,7 @@
 #include <cstring>
 #include <vector>
 #include <iostream>
+#include <limits>
 
 namespace evmone
 {
@@ -19,6 +20,7 @@ class ArenaAllocator
     static ssize_t constexpr max_alloc_size = 1024;
     static ssize_t constexpr block_size = 4 * 1024;
     static ssize_t constexpr cache_size = max_alloc_size / alignment;
+    static ssize_t constexpr blocks_limit = std::numeric_limits<ssize_t>::max();
 
     static_assert(max_alloc_size % alignment == 0);
     static_assert(block_size % max_alloc_size == 0);
@@ -31,7 +33,7 @@ class ArenaAllocator
 
 public:
     ArenaAllocator()
-        : block{new char[block_size]}, blocks{block}, block_usage{}, block_no{}, cache{}
+        : block{(char *)std::aligned_alloc(8, block_size)}, blocks{block}, block_usage{}, block_no{}, cache{}
     {}
 
     ArenaAllocator(ArenaAllocator &&other)
@@ -58,7 +60,7 @@ public:
     ~ArenaAllocator()
     {
         for (char* p : blocks)
-            delete[] p;
+            std::free(p);
     }
 
     void reset() 
@@ -70,6 +72,11 @@ public:
         {
             cache[i] = nullptr;
         }
+    }
+
+    bool symbolic_analysys_threshold_exceeded()
+    {
+        return block_no >= blocks_limit;
     }
 
     template<typename T>
@@ -91,7 +98,7 @@ public:
                 if (block_no < blocks.size()) block = blocks[block_no];
                 else 
                 {
-                    block = new char[block_size];
+                    block = (char *)std::aligned_alloc(8, block_size);
                     blocks.push_back(block);
                 }
                 block_usage = n;

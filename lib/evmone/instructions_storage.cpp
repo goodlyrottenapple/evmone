@@ -93,11 +93,11 @@ constexpr auto sstore_costs = []() noexcept {
 }();
 }  // namespace
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     auto& x = stack[0];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(x);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(x);
     const auto key = intx::be::store<evmc::bytes32>(x.val);
 
     if (state.rev >= EVMC_BERLIN &&
@@ -112,15 +112,16 @@ Result sload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymb
     }
 
     x.val = intx::be::load<uint256>(state.host.get_storage(state.msg->recipient, key));
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         state.symbolic.journaled.get_store(state.msg->recipient, key, x.sval);
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result sload(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result sload(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result sload<true, true>(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sload<true, false>(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sload<false, false>(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 
-template <bool isSymbolic>
+template <bool isSymbolic, bool isSymbolicEnabled>
 Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSymbolic>& state) noexcept
 {
     if (state.in_static_mode())
@@ -128,7 +129,7 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
 
     const auto& key_index = stack[0];
     const auto& val_index = stack[1];
-    if constexpr (isSymbolic) state.symbolic.symbolic_value_matches_concrete(key_index);
+    if constexpr (isSymbolic && isSymbolicEnabled) state.symbolic.symbolic_value_matches_concrete(key_index);
 
     if (state.rev >= EVMC_ISTANBUL && gas_left <= 2300)
         return {EVMC_OUT_OF_GAS, gas_left};
@@ -143,7 +144,7 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
             0;
     const auto status = state.host.set_storage(state.msg->recipient, key, value);
 
-    if constexpr (isSymbolic)
+    if constexpr (isSymbolic && isSymbolicEnabled)
         state.symbolic.journaled.update_store(state.msg->recipient, key, val_index);
 
     const auto [gas_cost_warm, gas_refund] = sstore_costs[state.rev][status];
@@ -156,7 +157,8 @@ Result sstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<isSym
     return {EVMC_SUCCESS, gas_left};
 }
 
-template Result sstore(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
-template Result sstore(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
+template Result sstore<true, true>(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sstore<true, false>(StackTop<true> stack, int64_t gas_left, ExecutionState<true>& state) noexcept;
+template Result sstore<false, false>(StackTop<false> stack, int64_t gas_left, ExecutionState<false>& state) noexcept;
 
 }  // namespace evmone::instr::core

@@ -82,7 +82,7 @@ public:
     T* operator->() const {return &mPtr->object;}		//x->member
     T &operator*() const {return mPtr->object;}		//*x, (*x).member
     operator bool() const {return mPtr != nullptr;}	//if(x) {/*x is not nullptr*/}
-    bool operator==(const rc_ptr &ptr) {return mPtr == ptr.mPtr;}
+    bool operator==(const rc_ptr &ptr) const {return mPtr == ptr.mPtr;}
 
     void swap(rc_ptr& other)
     {

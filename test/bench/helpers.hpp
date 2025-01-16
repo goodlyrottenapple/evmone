@@ -65,7 +65,7 @@ inline evmc::Result baseline_execute(evmc::VM& c_vm, [[maybe_unused]] ExecutionS
 {
     auto& vm = *static_cast<evmone::VM<false>*>(c_vm.get_raw_pointer());
     return evmc::Result{
-        baseline::execute<false>(vm, host.get_interface(), host.to_context(), rev, msg, analysis)};
+        baseline::execute<false, false>(vm, host.get_interface(), host.to_context(), rev, msg, analysis)};
 }
 
 inline evmc::Result evmc_execute(evmc::VM& vm, FakeExecutionState& /*exec_state*/,
