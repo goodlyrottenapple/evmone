@@ -10,7 +10,6 @@ struct rc_ptr_data
     T object;
     ArenaAllocator* arena;
     size_t rc;
-    bool locked = false;
 };
 
 template < class T >
@@ -35,7 +34,6 @@ public:
     {
         if(mPtr != nullptr)
         {
-            if(mPtr->locked) return;
             --mPtr->rc;
             if(mPtr->rc == 0)
             {
@@ -99,16 +97,7 @@ public:
     size_t counter()
     {
         if(mPtr == nullptr) return 0;
-        if(mPtr->locked) return std::numeric_limits<size_t>::max();
         return mPtr->rc;
-    }
-
-    // When placing into symbolic memory, we lock the rc_ptr so that we can memcpy chunks of said memory without worrying about the underlying object getting
-    // released. Otherwise we would have to walk the symbolic memory each time and manually acquire/release after each copy.
-    // This can of course negatively affect the memory, however, we reset the arena after each run so we at least won't leak any memory in a long running process.
-    void lock()
-    {
-        if(mPtr != nullptr) mPtr->locked = true;
     }
 
 private:
