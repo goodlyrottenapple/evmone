@@ -552,7 +552,7 @@ inline void calldataload(StackTop<isSymbolic> stack, ExecutionState<isSymbolic>&
         if constexpr (isSymbolic && isSymbolicEnabled)
         {
             assert(state.msg->input_size == state.symbolic.calldata.size);
-            index.sval = state.symbolic.load_calldata(begin, end);
+            index.sval = state.symbolic.calldata.load(begin, end);
         }
     }
 }
@@ -590,8 +590,8 @@ inline Result calldatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Executi
         if constexpr (isSymbolic && isSymbolicEnabled)
         {
             assert(state.msg->input_size == state.symbolic.calldata.size);
-            if (state.symbolic.calldata.is_concrete) state.symbolic.memory.set_concrete(dst, copy_size);
-            else state.symbolic.memory.set(dst, copy_size, &state.symbolic.calldata.symbolic[src]);
+            if (!state.symbolic.calldata.symbolic) state.symbolic.memory.set_concrete(dst, copy_size);
+            else state.symbolic.memory.set(dst, View {src + state.symbolic.calldata.offset, copy_size, *state.symbolic.calldata.symbolic});
         }
     }        
 
@@ -814,7 +814,7 @@ inline Result returndatacopy(StackTop<isSymbolic> stack, int64_t gas_left, Execu
             if constexpr (isSymbolic && isSymbolicEnabled) {
                 assert(state.return_data.size() == state.symbolic.returndata.size());
                 if (state.symbolic.returndata.is_concrete) state.symbolic.memory.set_concrete(dst, s);
-                else state.symbolic.memory.set(dst, s, &state.symbolic.returndata[src]);
+                else state.symbolic.memory.set(dst, View{src, s, state.symbolic.returndata});
                 // TODO I think we need requirements on s_return data that means we got to this point instead of failing with
                 // EVMC_INVALID_MEMORY_ACCESS?
             }
@@ -914,7 +914,7 @@ inline Result mload(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
 
     auto idx = static_cast<size_t>(index.val);
     index.val = intx::be::unsafe::load<uint256>(&state.memory[idx]);
-    if constexpr (isSymbolic && isSymbolicEnabled) index.sval = state.symbolic.load_memory(state.memory.data(), idx);
+    if constexpr (isSymbolic && isSymbolicEnabled) index.sval = state.symbolic.memory.load(state.memory.data(), idx, 32);
     return {EVMC_SUCCESS, gas_left};
 }
 
@@ -935,10 +935,9 @@ inline Result mstore(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionStat
             state.symbolic.memory.set_concrete(static_cast<size_t>(index.val), 32);
         else 
         {
-            value.sval.lock();
             for (size_t i = 0; i < 32; i++)
             {
-                state.symbolic.memory[static_cast<size_t>(index.val)+i] = Slice8 {value.sval, (uint8_t)(31-i)};
+                state.symbolic.memory.set(static_cast<size_t>(index.val)+i, Slice8 {value.sval, (uint8_t)(31-i)});
             }
         }
     }
@@ -958,11 +957,8 @@ inline Result mstore8(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionSta
     state.memory[static_cast<size_t>(index.val)] = static_cast<uint8_t>(value.val);
     if constexpr (isSymbolic && isSymbolicEnabled)
     {
-        if(value.is_pure()) state.symbolic.memory[static_cast<size_t>(index.val)].set_concrete();
-        else {
-            value.sval.lock();
-            state.symbolic.memory[static_cast<size_t>(index.val)] = Slice8 {value.sval, 31};
-        }
+        if(value.is_pure()) state.symbolic.memory.set_concrete(static_cast<size_t>(index.val), 1);
+        else state.symbolic.memory.set(static_cast<size_t>(index.val), Slice8 {value.sval, 31});
     }
     return {EVMC_SUCCESS, gas_left};
 }
@@ -1321,20 +1317,9 @@ inline Result mcopy(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState
         if constexpr (isSymbolic && isSymbolicEnabled)
         {
             if(dst < src)
-            {
-                for (size_t i = 0; i < size; i++)
-                {
-                    state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
-                }
-            }
+                state.symbolic.memory.set(dst, View{src, size, state.symbolic.memory});
             else
-            {
-                for (size_t _i = 0; _i < size; _i++)
-                {
-                    auto i = size - 1 - _i;
-                    state.symbolic.memory[dst+i] = state.symbolic.memory[src+i];
-                }
-            }
+                state.symbolic.memory.set_rev(dst, View{src, size, state.symbolic.memory});
         }
     }
     return {EVMC_SUCCESS, gas_left};

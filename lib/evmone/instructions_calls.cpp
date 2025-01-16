@@ -88,13 +88,13 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
                 {
                     auto current_index = i % 32;
                     concrete_data[current_index] = state.memory[i+input_offset];
-                    if(state.symbolic.memory[i+input_offset].is_in_concrete_memory())
-                        symbolic_data.word[current_index] = {nullptr, state.memory[i+input_offset]};
-                    else
+                    if (auto it = state.symbolic.memory.find(i+input_offset); it != state.symbolic.memory.end())
                     {
                         current_all_concrete = false;
-                        symbolic_data.word[current_index] = state.symbolic.memory[i+input_offset].get_symbolic();
+                        symbolic_data.word[current_index] = it->second;
                     }
+                    else
+                        symbolic_data.word[current_index] = {nullptr, state.memory[i+input_offset]};
 
                     i++;
                     if(i%32 == 0 || i+input_offset+1 == input_end)
@@ -160,7 +160,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
     }
     if constexpr (isSymbolic && isSymbolicEnabled) 
         if (state.child != nullptr)
-            state.child->symbolic.calldata.set(input_size, &state.symbolic.memory[input_offset], &state.memory[input_offset]);
+            state.child->symbolic.calldata.set(View{input_offset, input_size, state.symbolic.memory}, &state.memory[input_offset]);
 
     auto cost = has_non_zero_value ? CALL_VALUE_COST : 0;
 
@@ -211,7 +211,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
             if (state.child && state.child->output_size != 0)
             {
                 assert(state.child->output_size == result.output_size);
-                state.symbolic.returndata.set(state.child->output_size, &state.child->symbolic.memory[state.child->output_offset]);
+                state.symbolic.returndata.set(View {state.child->output_offset, state.child->output_size, static_cast<BaseSymbolicMemory&>(state.child->symbolic.memory)});
             }
             else
                 state.symbolic.returndata.clear();
@@ -227,7 +227,7 @@ Result call_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<is
             if(calling_precompile)
                 state.symbolic.memory.set_concrete(output_offset, copy_size);
             else
-                state.symbolic.memory.set(output_offset, copy_size, state.child->symbolic.memory.data());
+                state.symbolic.memory.set(output_offset, View {0, copy_size, static_cast<BaseSymbolicMemory&>(state.child->symbolic.memory)});
         }
     }
     const auto gas_used = msg.gas - result.gas_left;
@@ -472,7 +472,7 @@ Result create_impl(StackTop<isSymbolic> stack, int64_t gas_left, ExecutionState<
     if constexpr (isSymbolic && isSymbolicEnabled)
     {
         if (state.child && state.child->output_size != 0)
-            state.symbolic.returndata.set(state.child->output_size, &state.child->symbolic.memory[state.child->output_offset]);
+            state.symbolic.returndata.set(View{state.child->output_offset, state.child->output_size, static_cast<BaseSymbolicMemory&>(state.child->symbolic.memory)});
         else
             state.symbolic.returndata.clear();
     }
