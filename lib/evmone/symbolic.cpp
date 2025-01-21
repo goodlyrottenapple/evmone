@@ -60,8 +60,19 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
     std::visit(Cases{
         [&](const uint256& i) { os << "0x" << intx::hex(i); },
         [&](const Sload& i) { os << "LOAD(0x" << intx::hex(intx::be::load<uint256>(i.key)) << ")"; },
-        [&](const Slice&) { os << "SLICE..."; },
-        [&](const Keccak256&i) { 
+        [&](const Slice& i)
+        {
+            os << "SLICE[";
+            for (size_t j = 0; j < 32; j++)
+            {
+                if(((Slice8)i.word[j]).is_concrete()) os << static_cast<int>(i.word[j].concrete_or_offset);
+                else  os << *i.word[j].symbolic << " ! " << static_cast<int>(i.word[j].concrete_or_offset);
+                if(j < 31) os << ", ";
+            }
+            os << "]";
+        },
+        [&](const Keccak256& i)
+        {
             os << "Keccak256([";
             for (size_t j = 0; j < i.size; j++)
             {
@@ -69,7 +80,8 @@ std::ostream& operator<<(std::ostream& os, const SymbolicStackItem& si) {
                 else  os << *i.data[j].symbolic << " ! " << static_cast<int>(i.data[j].concrete_or_offset);
                 if(j < i.size-1) os << ", ";
             }
-            os << "], " << i.size << ")"; },
+            os << "], " << i.size << ")";
+        },
         [&](const UnaryOp& i) { os << "(" << i.op << " " << *i.first << ")"; },
         [&](const BinaryOp& i) { os << "(" << *i.first << " " << i.op << " " << *i.second << ")"; },
         [&](const TernaryOp& i) { os << "(" << i.op << " " << *i.first << *i.second << *i.third << ")"; }
@@ -127,7 +139,7 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
                     [&](UnaryOp& u)
                     { 
                         assert(u.first);
-                        if(StackItem<true>::is_pure(u.first))
+                        if(is_uint256_value(u.first))
                         {
                             const auto& x = std::get<uint256>(*u.first);
                             switch (u.op)
@@ -150,7 +162,7 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
                     { 
                         assert(b.first);
                         assert(b.second);
-                        if(StackItem<true>::is_pure(b.first) && StackItem<true>::is_pure(b.second))
+                        if(is_uint256_value(b.first) && is_uint256_value(b.second))
                         {
                             const auto& x = std::get<uint256>(*b.first);
                             const auto& y = std::get<uint256>(*b.second);
@@ -267,8 +279,8 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
                         }
                         else
                         {
-                            if(!StackItem<true>::is_pure(b.first)) stack.push_back(b.first);
-                            if(!StackItem<true>::is_pure(b.second)) stack.push_back(b.second);
+                            if(!is_uint256_value(b.first)) stack.push_back(b.first);
+                            if(!is_uint256_value(b.second)) stack.push_back(b.second);
                         }
                     },
                     [&](TernaryOp& t)
@@ -276,7 +288,7 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
                         assert(t.first);
                         assert(t.second);
                         assert(t.third);
-                        if(StackItem<true>::is_pure(t.first) && StackItem<true>::is_pure(t.second) && StackItem<true>::is_pure(t.third))
+                        if(is_uint256_value(t.first) && is_uint256_value(t.second) && is_uint256_value(t.third))
                         {
                             const auto& x = std::get<uint256>(*t.first);
                             const auto& y = std::get<uint256>(*t.second);
@@ -295,9 +307,9 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
                         }
                         else
                         {
-                            if(!StackItem<true>::is_pure(t.first)) stack.push_back(t.first);
-                            if(!StackItem<true>::is_pure(t.second)) stack.push_back(t.second);
-                            if(!StackItem<true>::is_pure(t.third)) stack.push_back(t.third);
+                            if(!is_uint256_value(t.first)) stack.push_back(t.first);
+                            if(!is_uint256_value(t.second)) stack.push_back(t.second);
+                            if(!is_uint256_value(t.third)) stack.push_back(t.third);
                         }
                     },
                     [&](Keccak256& k) 
@@ -338,7 +350,7 @@ bool eval(std::function<evmc_bytes32(evmc::address&, evmc_bytes32&)> get_storage
             [&](SymbolicRequirement& r) 
             { 
                 assert(r.sval);
-                if(StackItem<true>::is_pure(r.sval))
+                if(is_uint256_value(r.sval))
                 {
                     switch (r.op)
                     {

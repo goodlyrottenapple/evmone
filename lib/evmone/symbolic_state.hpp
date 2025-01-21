@@ -31,13 +31,6 @@ struct View
     size_t offset;
     size_t size;
     T& ref;
-    // const View& operator=(const View& other)
-    // {
-    //     offset = other.offset;
-    //     size = other.size;
-    //     ref = other.ref;
-    //     return *this;
-    // }
 };
 
 class BaseSymbolicMemory : public std::map<size_t, Slice8>
@@ -64,7 +57,7 @@ public:
         assert(lower<=upper);
         auto lower_bound = find(lower);
         if(lower_bound == end()) lower_bound = std::map<size_t, Slice8>::upper_bound(lower);
-        if(lower_bound == end()) return std::nullopt;
+        if(lower_bound == end() || lower_bound->first > upper) return std::nullopt;
         auto upper_bound = std::map<size_t, Slice8>::lower_bound(upper);
         if(lower_bound->first <= upper_bound->first) return std::pair(lower_bound, ++upper_bound);
         else return std::nullopt;
@@ -76,7 +69,7 @@ public:
         assert(lower<=upper);
         auto lower_bound = find(lower);
         if(lower_bound == end()) lower_bound = std::map<size_t, Slice8>::upper_bound(lower);
-        if(lower_bound == end()) return std::nullopt;
+        if(lower_bound == end() || lower_bound->first > upper) return std::nullopt;
         auto upper_bound = std::map<size_t, Slice8>::lower_bound(upper);
         if(lower_bound->first <= upper_bound->first) return std::pair(upper_bound, --lower_bound);
         else return std::nullopt;
@@ -219,7 +212,12 @@ public:
     {
         if (auto search = m[addr].find(key); search != m[addr].end())
         {
-            sval = search->second;
+            // we store concrete values in the journaled symbolic state only for the final eval
+            // however, we want to maintain the invariant that in the rest of the code,
+            // svals should not directly hold a uint256 and should instead indicate the
+            // value is pure via rc_ptr<SymbolicStackItem>()
+            if (is_uint256_value(search->second)) sval = rc_ptr<SymbolicStackItem>();
+            else sval = search->second;
         }
         else
         {
@@ -283,7 +281,7 @@ public:
             auto& selected_store = j.type == JournalEntryType::StoreChange ? stores : tstores;
             if(j.prev_value)
                 selected_store[j.addr][j.key] = j.prev_value.value();
-            else  selected_store[j.addr].erase(j.key);
+            else selected_store[j.addr].erase(j.key);
             journal.pop_back();
         }
     }
