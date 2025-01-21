@@ -6,11 +6,14 @@
 #include "../state/rlp.hpp"
 #include "statetest.hpp"
 #include <gtest/gtest.h>
+#include <evmone/vm.hpp>
 
 namespace evmone::test
 {
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary)
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic)
 {
+    if (symbolic) ((evmone::VM<true>*)vm.get_raw_pointer())->reset();
+            
     SCOPED_TRACE(test.name);
     for (const auto& [rev, cases] : test.cases)
     {
@@ -23,9 +26,13 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             // if (case_index != 3)
             //     continue;
 
+
+            
+
             const auto& expected = cases[case_index];
             const auto tx = test.multi_tx.get(expected.indexes);
             auto state = test.pre_state;
+
 
             const auto res = test::transition(state, test.block, tx, rev, vm, test.block.gas_limit,
                 state::BlockInfo::MAX_BLOB_GAS_PER_BLOCK);
@@ -64,6 +71,29 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             }
 
             EXPECT_EQ(state_root, expected.state_hash);
+            if (symbolic && !expected.exception && get<state::TransactionReceipt>(res).status == EVMC_SUCCESS)
+            {
+                auto* sym_vm = (evmone::VM<true>*)vm.get_raw_pointer();
+                if (!sym_vm->get_arena()->symbolic_analysys_threshold_exceeded())
+                {
+                    auto state_from_symbolic = test.pre_state;
+                    auto valid = sym_vm->compute_symbolic(
+                        [&state_from_symbolic](auto& addr, auto& k) { return state_from_symbolic.get_storage(addr, k); },
+                        [&state_from_symbolic](auto& addr, auto& k, evmc::bytes32 v) { if (v) state_from_symbolic[addr].storage.insert_or_assign(k, v); else state_from_symbolic[addr].storage.erase(k); }
+                    );
+                    ASSERT_TRUE(valid);
+                    for (auto& modified : get<state::TransactionReceipt>(res).state_diff.modified_accounts)
+                    {
+                        auto& addr = modified.addr;
+                        for (auto& it : state[addr].storage)
+                        {
+                            EXPECT_EQ(it.second, state_from_symbolic[addr].storage[it.first]);
+                        }
+                    }
+                }
+                // else std::cerr << "disabling symbolic analysis...\n";
+
+            }
         }
     }
 }

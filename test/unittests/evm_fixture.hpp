@@ -35,6 +35,8 @@ class evm : public testing::TestWithParam<evmc::VM*>
 protected:
     /// Reports if execution is done by evmone/Advanced.
     static bool is_advanced() noexcept;
+    /// Reports if execution is done by the symbolic basic execution.
+    static bool is_symbolic() noexcept;
 
     /// The VM handle.
     evmc::VM& vm;

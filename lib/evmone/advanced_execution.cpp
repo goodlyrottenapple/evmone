@@ -12,7 +12,6 @@ namespace evmone::advanced
 evmc_result execute(AdvancedExecutionState& state, const AdvancedCodeAnalysis& analysis) noexcept
 {
     state.analysis.advanced = &analysis;  // Allow accessing the analysis by instructions.
-
     const auto* instr = state.analysis.advanced->instrs.data();  // Get the first instruction.
     while (instr != nullptr)
         instr = instr->fn(instr, state);
