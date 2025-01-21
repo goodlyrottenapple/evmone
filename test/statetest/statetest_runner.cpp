@@ -6,11 +6,14 @@
 #include "../state/rlp.hpp"
 #include "statetest.hpp"
 #include <gtest/gtest.h>
+#include <evmone/vm.hpp>
 
 namespace evmone::test
 {
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary)
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic)
 {
+    if (symbolic) ((evmone::VM<true>*)vm.get_raw_pointer())->reset();
+            
     SCOPED_TRACE(test.name);
     for (const auto& [rev, cases] : test.cases)
     {
@@ -22,6 +25,9 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             //     continue;
             // if (case_index != 3)
             //     continue;
+
+
+            
 
             const auto& expected = cases[case_index];
             const auto tx = test.multi_tx.get(expected.indexes);
@@ -64,6 +70,42 @@ void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_su
             }
 
             EXPECT_EQ(state_root, expected.state_hash);
+            if (symbolic && !expected.exception && get<state::TransactionReceipt>(res).status == EVMC_SUCCESS)
+            {
+                auto* sym_vm = (evmone::VM<true>*)vm.get_raw_pointer();
+                if (!sym_vm->get_arena()->symbolic_analysys_threshold_exceeded())
+                {
+                    auto state_from_symbolic = test.pre_state.to_intra_state();
+                    std::unordered_set<evmc::address> touched_addresses;
+                    auto valid = sym_vm->compute_symbolic(
+                        [&touched_addresses, &state_from_symbolic](auto& addr, auto& key) 
+                        {
+                            touched_addresses.insert(addr);
+                            const auto& acc = state_from_symbolic.get_or_insert(addr, {});
+                            if (const auto it = acc.storage.find(key); it != acc.storage.end())
+                                return it->second.current;
+                            return bytes32{};
+                        },
+                        [&touched_addresses, &state_from_symbolic](auto& addr, auto& k, evmc::bytes32 v) 
+                        {
+                            touched_addresses.insert(addr);
+                            if (v) state_from_symbolic.get_or_insert(addr, {}).storage[k].current = v; 
+                            else state_from_symbolic.get_or_insert(addr, {}).storage.erase(k); 
+                        }
+                    );
+                    ASSERT_TRUE(valid);
+                    for (auto& addr : touched_addresses)
+                    {
+                        if (auto acc = state.find(addr); acc)
+                            for (auto& it : acc->storage)
+                            {
+                                EXPECT_EQ(it.second.current, state_from_symbolic.get(addr).storage[it.first].current);
+                            }
+                    }
+                }
+                // else std::cerr << "disabling symbolic analysis...\n";
+
+            }
         }
     }
 }

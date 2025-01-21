@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "symbolic.hpp"
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
 #include <evmc/utils.h>
@@ -14,12 +15,14 @@
 namespace evmone
 {
 using evmc::bytes_view;
+template <bool>
 class ExecutionState;
 
+template <bool isSymbolic>
 class Tracer
 {
-    friend class VM;  // Has access the m_next_tracer to traverse the list forward.
-    std::unique_ptr<Tracer> m_next_tracer;
+    friend class VM<isSymbolic>;  // Has access the m_next_tracer to traverse the list forward.
+    std::unique_ptr<Tracer<isSymbolic>> m_next_tracer;
 
 public:
     virtual ~Tracer() = default;
@@ -39,9 +42,10 @@ public:
             m_next_tracer->notify_execution_end(result);
     }
 
+
     void notify_instruction_start(  // NOLINT(misc-no-recursion)
-        uint32_t pc, intx::uint256* stack_top, int stack_height, int64_t gas,
-        const ExecutionState& state) noexcept
+        uint32_t pc, StackItem<isSymbolic>* stack_top, int stack_height, int64_t gas,
+        const ExecutionState<isSymbolic>& state) noexcept
     {
         on_instruction_start(pc, stack_top, stack_height, gas, state);
         if (m_next_tracer)
@@ -51,8 +55,8 @@ public:
 private:
     virtual void on_execution_start(
         evmc_revision rev, const evmc_message& msg, bytes_view code) noexcept = 0;
-    virtual void on_instruction_start(uint32_t pc, const intx::uint256* stack_top, int stack_height,
-        int64_t gas, const ExecutionState& state) noexcept = 0;
+    virtual void on_instruction_start(uint32_t pc, const StackItem<isSymbolic>* stack_top, int stack_height,
+        int64_t gas, const ExecutionState<isSymbolic>& state) noexcept = 0;
     virtual void on_execution_end(const evmc_result& result) noexcept = 0;
 };
 
@@ -61,8 +65,8 @@ private:
 ///
 /// @param out  Report output stream.
 /// @return     Histogram tracer object.
-EVMC_EXPORT std::unique_ptr<Tracer> create_histogram_tracer(std::ostream& out);
+EVMC_EXPORT std::unique_ptr<Tracer<false>> create_histogram_tracer(std::ostream& out);
 
-EVMC_EXPORT std::unique_ptr<Tracer> create_instruction_tracer(std::ostream& out);
+EVMC_EXPORT std::unique_ptr<Tracer<false>> create_instruction_tracer(std::ostream& out);
 
 }  // namespace evmone

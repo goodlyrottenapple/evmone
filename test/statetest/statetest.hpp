@@ -106,7 +106,7 @@ void validate_state(const TestState& state, evmc_revision rev);
 /// Execute the state @p test using the @p vm.
 ///
 /// @param trace_summary  Output execution summary to the default trace stream.
-void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary);
+void run_state_test(const StateTransitionTest& test, evmc::VM& vm, bool trace_summary, bool symbolic);
 
 /// Computes the hash of the RLP-encoded list of transaction logs.
 /// This method is only used in tests.

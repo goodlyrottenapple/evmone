@@ -33,12 +33,12 @@ static_assert(sizeof(BlockInfo) == 8);
 
 
 /// The execution state specialized for the Advanced interpreter.
-struct AdvancedExecutionState : ExecutionState
+struct AdvancedExecutionState : ExecutionState<false>
 {
     int64_t gas_left = 0;
 
     /// Pointer to the stack top.
-    StackTop stack = stack_space.bottom();
+    StackTop<false> stack = StackTop(stack_space.bottom(), nullptr);
 
     /// The gas cost of the current block.
     ///
@@ -50,17 +50,17 @@ struct AdvancedExecutionState : ExecutionState
     AdvancedExecutionState(const evmc_message& message, evmc_revision revision,
         const evmc_host_interface& host_interface, evmc_host_context* host_ctx,
         bytes_view _code) noexcept
-      : ExecutionState{message, revision, host_interface, host_ctx, _code}, gas_left{message.gas}
+      : ExecutionState{message, revision, host_interface, host_ctx, _code, SymbolicState<false>()}, gas_left{message.gas}
     {}
 
     /// Computes the current EVM stack height.
     [[nodiscard]] int stack_size() noexcept
     {
-        return static_cast<int>((&stack.top() - stack_space.bottom()));
+        return static_cast<int>((&stack[0] - stack_space.bottom()));
     }
 
     /// Adjust the EVM stack height by given change.
-    void adjust_stack_size(int change) noexcept { stack = &stack.top() + change; }
+    void adjust_stack_size(int change) noexcept { stack = &stack[0] + change; }
 
     /// Terminates the execution with the given status code.
     const Instruction* exit(evmc_status_code status_code) noexcept

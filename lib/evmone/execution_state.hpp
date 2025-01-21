@@ -3,11 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "memory.hpp"
+#include "symbolic_state.hpp"
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
+#include <iostream>
 
 namespace evmone
 {
@@ -24,21 +28,30 @@ using evmc::bytes;
 using evmc::bytes_view;
 using intx::uint256;
 
-
 /// Provides memory for EVM stack.
+template <bool isSymbolic>
 class StackSpace
 {
-    static uint256* allocate() noexcept
+    static StackItem<isSymbolic>* allocate() noexcept
     {
-        static constexpr auto alignment = sizeof(uint256);
-        static constexpr auto size = limit * sizeof(uint256);
+        static constexpr auto alignment = std::bit_ceil(sizeof(StackItem<isSymbolic>));
+        static constexpr auto size = limit * sizeof(StackItem<isSymbolic>);
 #ifdef _MSC_VER
         // MSVC doesn't support aligned_alloc() but _aligned_malloc() can be used instead.
         const auto p = _aligned_malloc(size, alignment);
 #else
         const auto p = std::aligned_alloc(alignment, size);
 #endif
-        return static_cast<uint256*>(p);
+        if constexpr (isSymbolic)
+        {
+            for (size_t i = 0; i < limit; i++)
+            {
+                StackItem<isSymbolic>* ptr = &static_cast<StackItem<isSymbolic>*>(p)[i];
+                ptr = new(ptr) StackItem<true> {0, SymbolicStackItemPtr()};
+            }
+            
+        }
+        return static_cast<StackItem<isSymbolic>*>(p);
     }
 
     struct Deleter
@@ -57,7 +70,7 @@ class StackSpace
 
     /// The storage allocated for maximum possible number of items.
     /// Items are aligned to 256 bits for better packing in cache lines.
-    std::unique_ptr<uint256, Deleter> m_stack_space;
+    std::unique_ptr<StackItem<isSymbolic>, Deleter> m_stack_space;
 
 public:
     /// The maximum number of EVM stack items.
@@ -66,88 +79,28 @@ public:
     StackSpace() noexcept : m_stack_space{allocate()} {}
 
     /// Returns the pointer to the "bottom", i.e. below the stack space.
-    [[nodiscard, clang::no_sanitize("bounds")]] uint256* bottom() noexcept
+    [[nodiscard, clang::no_sanitize("bounds")]] StackItem<isSymbolic>* bottom() noexcept
     {
         return m_stack_space.get() - 1;
     }
-};
 
-
-/// The EVM memory.
-///
-/// The implementations uses initial allocation of 4k and then grows capacity with 2x factor.
-/// Some benchmarks have been done to confirm 4k is ok-ish value.
-class Memory
-{
-    /// The size of allocation "page".
-    static constexpr size_t page_size = 4 * 1024;
-
-    struct FreeDeleter
+    void reset()
     {
-        void operator()(uint8_t* p) const noexcept { std::free(p); }
-    };
-
-    /// Owned pointer to allocated memory.
-    std::unique_ptr<uint8_t[], FreeDeleter> m_data;
-
-    /// The "virtual" size of the memory.
-    size_t m_size = 0;
-
-    /// The size of allocated memory. The initialization value is the initial capacity.
-    size_t m_capacity = page_size;
-
-    [[noreturn, gnu::cold]] static void handle_out_of_memory() noexcept { std::terminate(); }
-
-    void allocate_capacity() noexcept
-    {
-        m_data.reset(static_cast<uint8_t*>(std::realloc(m_data.release(), m_capacity)));
-        if (!m_data) [[unlikely]]
-            handle_out_of_memory();
-    }
-
-public:
-    /// Creates Memory object with initial capacity allocation.
-    Memory() noexcept { allocate_capacity(); }
-
-    uint8_t& operator[](size_t index) noexcept { return m_data[index]; }
-
-    [[nodiscard]] const uint8_t* data() const noexcept { return m_data.get(); }
-    [[nodiscard]] size_t size() const noexcept { return m_size; }
-
-    /// Grows the memory to the given size. The extent is filled with zeros.
-    ///
-    /// @param new_size  New memory size. Must be larger than the current size and multiple of 32.
-    void grow(size_t new_size) noexcept
-    {
-        // Restriction for future changes. EVM always has memory size as multiple of 32 bytes.
-        INTX_REQUIRE(new_size % 32 == 0);
-
-        // Allow only growing memory. Include hint for optimizing compiler.
-        INTX_REQUIRE(new_size > m_size);
-
-        if (new_size > m_capacity)
+        if constexpr (isSymbolic)
         {
-            m_capacity *= 2;  // Double the capacity.
-
-            if (m_capacity < new_size)  // If not enough.
+            for (size_t i = 0; i < limit; i++)
             {
-                // Set capacity to required size rounded to multiple of page_size.
-                m_capacity = ((new_size + (page_size - 1)) / page_size) * page_size;
+                StackItem<isSymbolic>* ptr = &static_cast<StackItem<isSymbolic>*>(m_stack_space.get())[i];
+                ptr->sval.drop();
             }
-
-            allocate_capacity();
+            
         }
-        std::memset(&m_data[m_size], 0, new_size - m_size);
-        m_size = new_size;
     }
-
-    /// Virtually clears the memory by setting its size to 0. The capacity stays unchanged.
-    void clear() noexcept { m_size = 0; }
 };
-
 
 /// Generic execution state for generic instructions implementations.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
+template <bool isSymbolic>
 class ExecutionState
 {
 public:
@@ -170,6 +123,10 @@ public:
     /// Container to be deployed returned from RETURNCONTRACT, used only inside EOFCREATE execution.
     std::optional<bytes> deploy_container;
 
+    /// Symbolic storage
+    ExecutionState<isSymbolic>* child = nullptr;
+    SymbolicState<isSymbolic> symbolic;
+    ArenaAllocator* arena = nullptr;
 private:
     evmc_tx_context m_tx = {};
 
@@ -187,15 +144,21 @@ public:
     /// Stack space allocation.
     ///
     /// This is the last field to make other fields' offsets of reasonable values.
-    StackSpace stack_space;
+    StackSpace<isSymbolic> stack_space;
 
     ExecutionState() noexcept = default;
 
+    ExecutionState(SymbolicState<isSymbolic>&& s) noexcept : symbolic{std::move(s)} {
+        if constexpr (isSymbolic) arena = &s.arena;
+    }
+
     ExecutionState(const evmc_message& message, evmc_revision revision,
         const evmc_host_interface& host_interface, evmc_host_context* host_ctx,
-        bytes_view _code) noexcept
-      : msg{&message}, host{host_interface, host_ctx}, rev{revision}, original_code{_code}
-    {}
+        bytes_view _code, SymbolicState<isSymbolic>&& s) noexcept
+      : msg{&message}, host{host_interface, host_ctx}, rev{revision}, original_code{_code}, symbolic{std::move(s)}
+    {
+        if constexpr (isSymbolic) arena = &s.arena;
+    }
 
     /// Resets the contents of the ExecutionState so that it could be reused.
     void reset(const evmc_message& message, evmc_revision revision,
@@ -215,6 +178,7 @@ public:
         deploy_container = {};
         m_tx = {};
         call_stack = {};
+        if constexpr (isSymbolic) symbolic.memory.clear();
     }
 
     [[nodiscard]] bool in_static_mode() const { return (msg->flags & EVMC_STATIC) != 0; }
