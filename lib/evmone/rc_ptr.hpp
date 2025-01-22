@@ -70,6 +70,14 @@ public:
         return *this;
     }
 
+    rc_ptr &operator=(rc_ptr &&ptr)
+    {
+        rc_ptr::release(mPtr);
+        mPtr = ptr.mPtr;
+        ptr.mPtr = nullptr;
+        return *this;
+    }
+
     //Retrieve actual pointer
     T* get() const
     {
